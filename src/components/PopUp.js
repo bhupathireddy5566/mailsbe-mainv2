@@ -23,16 +23,17 @@ const PopUp = ({ setPopUp }) => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
 
-  // REST API endpoint from Hasura configuration [[8]]
+  // Correct REST endpoint URL for tracking pixel
   const restEndpoint = `${process.env.NEXT_PUBLIC_BACKEND_URL}/api/rest/update-seen-status`;
 
   useEffect(() => {
+    if (!user.id) return;
+
     const timestamp = Date.now();
-    // Construct tracking URL using REST endpoint pattern [[8]]
     setImgText(
-      `${process.env.NEXT_PUBLIC_BACKEND_URL}/v1/functions/update?text=${timestamp}`
+      `${restEndpoint}?text=${timestamp}&user_id=${user.id}`
     );
-  }, []);
+  }, [user.id]);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -40,28 +41,59 @@ const PopUp = ({ setPopUp }) => {
     setError(null);
 
     try {
-      // REST API call using fetch() [[6]]
-      const response = await fetch(restEndpoint, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          // Use secure authentication headers [[8]]
-          "x-hasura-admin-secret": process.env.NHOST_ADMIN_SECRET,
-        },
-        body: JSON.stringify({
-          email,
-          description,
-          img_text: imgText.split("=")[1],
-          user_id: user.id,
-        }),
-      });
+      // Validate required fields
+      if (!email || !description) {
+        throw new Error("Please fill all required fields");
+      }
 
-      if (!response.ok) throw new Error("Network response was not ok");
+      // GraphQL mutation for email insertion
+      const response = await fetch(
+        `${process.env.NEXT_PUBLIC_BACKEND_URL}/v1/graphql`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            // Use user token instead of admin secret
+            Authorization: `Bearer ${user.accessToken}`,
+          },
+          body: JSON.stringify({
+            query: `
+              mutation AddEmail(
+                $email: String!,
+                $description: String!,
+                $img_text: String!,
+                $user_id: uuid!
+              ) {
+                insert_emails_one(object: {
+                  email: $email,
+                  description: $description,
+                  img_text: $img_text,
+                  user_id: $user_id
+                }) {
+                  id
+                }
+              }
+            `,
+            variables: {
+              email,
+              description,
+              img_text: imgText,
+              user_id: user.id,
+            },
+          }),
+        }
+      );
+
+      const result = await response.json();
+
+      if (result.errors) {
+        throw new Error(result.errors[0].message);
+      }
 
       toast.success("Email added successfully");
       setPopUp(false);
     } catch (err) {
-      setError(err.message);
+      setError(err.message || "Something went wrong");
       toast.error("Failed to add email");
     } finally {
       setLoading(false);
@@ -72,7 +104,7 @@ const PopUp = ({ setPopUp }) => {
     <div className={styles.popup}>
       <div className={styles.popUpDiv}>
         <div className={styles.header}>
-          <Typography variant="h6">Enter new email details</Typography>
+          <Typography variant="h6">Add New Email</Typography>
           <IconButton onClick={() => setPopUp(false)}>
             <HighlightOffIcon />
           </IconButton>
@@ -80,7 +112,7 @@ const PopUp = ({ setPopUp }) => {
         <form onSubmit={handleSubmit}>
           <FormControl fullWidth error={!!error}>
             <TextField
-              label="Email"
+              label="Email Address"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               required
@@ -92,6 +124,7 @@ const PopUp = ({ setPopUp }) => {
               value={description}
               onChange={(e) => setDescription(e.target.value)}
               multiline
+              rows={3}
               required
               fullWidth
               margin="normal"
@@ -104,7 +137,7 @@ const PopUp = ({ setPopUp }) => {
               margin="normal"
             />
             
-            {/* Tracking pixel preview with REST integration [[8]] */}
+            {/* Tracking pixel preview */}
             <div className={styles.copyBox}>
               <div className={styles.imgDiv}>
                 {name?.[0] || ''}
@@ -116,7 +149,7 @@ const PopUp = ({ setPopUp }) => {
                 {name?.slice(1) || ''}
               </div>
               <span className={styles.imgHelperText}>
-                Copy this text and paste it in the email
+                Copy this text into your email
               </span>
             </div>
 
