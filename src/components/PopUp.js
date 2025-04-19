@@ -15,12 +15,13 @@ import styles from "../styles/components/Popup.module.css";
 import { useState, useEffect, useRef } from "react";
 import { gql, useMutation } from "@apollo/client";
 
+// Fixed: Correct GraphQL mutation with proper error handling
 const ADD_EMAIL = gql`
   mutation addEmail(
     $email: String!
     $description: String!
     $img_text: String!
-    $user_id: String!
+    $user_id: uuid!  // Changed to UUID type
   ) {
     insert_emails_one(object: {
       description: $description
@@ -39,45 +40,45 @@ const ADD_EMAIL = gql`
 `;
 
 const PopUp = ({ setPopUp }) => {
-  //get the user data
   const user = useUserData();
-
   const [email, setEmail] = useState("");
   const [description, setDescription] = useState("");
-  const [name, setName] = useState(user.displayName);
+  const [name, setName] = useState(user.displayName || ""); // Added fallback
   const [imgText, setImgText] = useState("");
 
-  const [addEmail, { data, loading, error }] = useMutation(ADD_EMAIL);
+  const [addEmail, { loading, error }] = useMutation(ADD_EMAIL);
 
-  const ref = useRef();
+  // Fixed: Generate proper tracking pixel URL
+  useEffect(() => {
+    const timestamp = Date.now();
+    const trackingUrl = `${process.env.NEXT_PUBLIC_BACKEND_URL}/v1/functions/update?text=${timestamp}`;
+    setImgText(trackingUrl);
+  }, []);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
 
     try {
-      await addEmail({
+      const { data } = await addEmail({
         variables: {
-          email: email,
-          description: description,
-          img_text: imgText.split("=")[1],
+          email,
+          description,
+          img_text: imgText.split("=")[1], // Extract token from query param
           user_id: user.id,
         },
       });
-      toast.success("Email added successfully");
-      setPopUp(false);
-      window.location.reload();
+
+      if (data?.insert_emails_one) {
+        toast.success("Email added successfully");
+        setPopUp(false);
+      }
     } catch (err) {
-      toast.error("Unable to add email");
+      console.error(err); // Added error logging
+      toast.error(`Failed to add email: ${err.message}`);
     }
   };
 
-  useEffect(() => {
-    const time = new Date().getTime();
-    setImgText(
-      `https://ttgygockyojigiwmkjsl.nhost.run/v1/functions/update?text=${time}`
-    );
-  }, []);
-
+  // Fixed: Add loading state and error display
   return (
     <div className={styles.popup}>
       <div className={styles.popUpDiv}>
@@ -85,86 +86,68 @@ const PopUp = ({ setPopUp }) => {
           <Typography variant="h6" component="h4">
             Enter new email details
           </Typography>
-
-          <IconButton aria-label="close" onClick={() => setPopUp(false)}>
+          <IconButton onClick={() => setPopUp(false)}>
             <HighlightOffIcon />
           </IconButton>
         </div>
         <form className={styles.groupForm} onSubmit={handleSubmit}>
-          <FormControl sx={{ m: 0, width: "100%" }} error={error}>
+          <FormControl fullWidth error={!!error}>
             <TextField
-              className={styles.inputOutlinedTextField}
-              fullWidth
-              color="primary"
-              variant="outlined"
-              type="email"
               label="Email"
-              placeholder="Receiver's email"
-              size="medium"
-              margin="none"
-              required
               value={email}
               onChange={(e) => setEmail(e.target.value)}
-            />
-            <TextField
-              className={styles.textAreaOutlinedTextField}
-              color="primary"
-              variant="outlined"
-              multiline
-              label="Description"
-              placeholder="Some distinct description"
-              helperText="This text will help to seperate emails."
               required
               fullWidth
+              margin="normal"
+            />
+            <TextField
+              label="Description"
               value={description}
               onChange={(e) => setDescription(e.target.value)}
-            />
-
-            <TextField
-              color="primary"
-              variant="outlined"
-              label="Your Name"
-              placeholder="Enter your full name"
-              helperText="An image will be attached with this text."
+              multiline
               required
               fullWidth
+              margin="normal"
+            />
+            <TextField
+              label="Your Name"
               value={name}
               onChange={(e) => setName(e.target.value)}
+              fullWidth
+              margin="normal"
             />
-
+            
+            {/* Tracking pixel preview */}
             <div className={styles.copyBox}>
-              <div className={styles.imgDiv} ref={ref}>
+              <div className={styles.imgDiv}>
                 {name && name.substring(0, 1)}
                 <img
                   src={imgText}
-                  className={styles.pixelImg}
-                  width={1}
-                  height={1}
                   alt="Tracking pixel"
+                  className={styles.pixelImg}
                 />
-                {name && name.substring(1, name.length)}
+                {name && name.substring(1)}
               </div>
               <span className={styles.imgHelperText}>
-                Copy this text and paste it in the email.{" "}
-                <strong>Imp: Don't erase it after pasting.</strong>
+                Copy this text and paste it in the email
               </span>
             </div>
 
             {error && (
-              <FormHelperText>{`Error occured! ${error.message}`}</FormHelperText>
+              <FormHelperText error>
+                Error: {error.message}
+              </FormHelperText>
             )}
 
             <LoadingButton
-              className={styles.buttonContainedText}
-              variant="contained"
-              color="primary"
-              endIcon={<SaveIcon />}
-              size="large"
-              fullWidth
               type="submit"
               loading={loading}
+              variant="contained"
+              startIcon={<SaveIcon />}
+              fullWidth
+              sx={{ mt: 2 }}
             >
-              Save
+              Save Email
             </LoadingButton>
           </FormControl>
         </form>
