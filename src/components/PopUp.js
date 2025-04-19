@@ -101,27 +101,32 @@ const PopUp = ({ setPopUp }) => {
     console.log("Generated tracking URL:", trackingUrl);
     console.log("Tracking ID:", time);
     
-    // Test the tracking URL to make sure it's accessible
-    fetch(trackingUrl, { method: 'HEAD' })
-      .then(() => console.log("Tracking URL is accessible"))
-      .catch(err => console.warn("Tracking URL might not be accessible, but this is often normal in development:", err));
-    
     setImgText(trackingUrl);
   }, []);
 
-  const copyTrackingCode = () => {
-    // Create the full HTML img tag for email tracking
-    const trackingCode = `<img src="${imgText}" width="1" height="1" alt="" style="display:none" />`;
-    
-    // Copy to clipboard
-    navigator.clipboard.writeText(trackingCode)
+  // This function will copy just the URL of the tracking pixel
+  const copyTrackingUrl = () => {
+    navigator.clipboard.writeText(imgText)
       .then(() => {
-        toast.success("Tracking code copied to clipboard!");
+        toast.success("Tracking URL copied! Insert as image in your email");
       })
       .catch(err => {
-        console.error("Failed to copy tracking code:", err);
-        toast.error("Failed to copy tracking code");
+        console.error("Failed to copy tracking URL:", err);
+        toast.error("Failed to copy tracking URL");
       });
+  };
+  
+  // Display instructions based on email client
+  const showEmailInstructions = () => {
+    toast.success(
+      <div>
+        <p><strong>How to add tracking in your email:</strong></p>
+        <p>1. Copy the tracking URL</p>
+        <p>2. In your email, insert an image using the URL</p>
+        <p>3. Make the image very small (1x1px)</p>
+      </div>,
+      { duration: 8000 }
+    );
   };
 
   return (
@@ -187,24 +192,42 @@ const PopUp = ({ setPopUp }) => {
               backgroundColor: '#f5f5f5'
             }}>
               <Typography variant="subtitle1" gutterBottom sx={{ fontWeight: 'medium' }}>
-                Copy the tracking code below and paste it at the end of your email
+                Track when your email is opened
               </Typography>
               
-              <Box sx={{ display: 'flex', alignItems: 'center', marginY: 2 }}>
+              <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2, marginY: 2 }}>
                 <Button
                   variant="contained"
                   color="primary"
                   startIcon={<ContentCopyIcon />}
-                  onClick={copyTrackingCode}
-                  sx={{ flexGrow: 1 }}
+                  onClick={copyTrackingUrl}
+                  fullWidth
                 >
-                  COPY TRACKING CODE
+                  COPY TRACKING URL
+                </Button>
+                
+                <Button 
+                  variant="outlined"
+                  color="info"
+                  onClick={showEmailInstructions}
+                  fullWidth
+                >
+                  HOW TO USE IN EMAIL
                 </Button>
               </Box>
               
               <Typography variant="caption" color="textSecondary">
-                The tracking code is an invisible pixel that will notify you when your email is opened
+                Add this as a tiny invisible image in your email to track when it's opened
               </Typography>
+              
+              <TextField
+                value={imgText}
+                size="small"
+                fullWidth
+                InputProps={{ readOnly: true }}
+                sx={{ mt: 1, fontSize: '0.75rem' }}
+                variant="outlined"
+              />
             </Box>
 
             {error && (
