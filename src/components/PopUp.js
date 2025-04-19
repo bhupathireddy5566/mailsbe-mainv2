@@ -59,36 +59,45 @@ const PopUp = ({ setPopUp }) => {
   const handleSubmit = async (e) => {
     e.preventDefault();
     
-    // Extract the tracking ID (timestamp) from the URL
-    const trackingId = imgText.split("=")[1];
+    // Extract the tracking ID from the URL
+    const trackingUrl = imgText;
+    const trackingId = trackingUrl.split("=")[1];
+    
+    console.log("Submitting email with tracking ID:", trackingId);
+    console.log("Full tracking URL:", trackingUrl);
+    
     if (!trackingId) {
       toast.error("Invalid tracking URL");
       return;
     }
 
     try {
-      await addEmail({
+      // Save both the full tracking URL and ID for verification
+      const result = await addEmail({
         variables: {
           email: email,
           description: description,
-          img_text: trackingId,
+          img_text: trackingId, // This is what the server will look for
           user_id: user.id,
         },
       });
+      
+      console.log("Email successfully added with result:", result);
       toast.success("Email added successfully");
       setPopUp(false);
       window.location.reload();
     } catch (err) {
       console.error("Error adding email:", err);
-      toast.error("Unable to add email");
+      toast.error("Unable to add email: " + (err.message || "Unknown error"));
     }
   };
 
   useEffect(() => {
-    // Generate a unique timestamp for tracking
+    // Generate a unique timestamp for tracking - use current time in milliseconds
     const time = new Date().getTime();
     const trackingUrl = `${backendUrl}/v1/functions/update?text=${time}`;
     console.log("Generated tracking URL:", trackingUrl);
+    console.log("Tracking ID:", time);
     setImgText(trackingUrl);
   }, []);
 
