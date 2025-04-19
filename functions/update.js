@@ -2,12 +2,15 @@ import { NhostClient } from "@nhost/nhost-js";
 
 // Make sure we have a backend URL - provide fallback if needed
 const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || 'https://ttgygockyojigiwmkjsl.ap-south-1.nhost.run';
+// Get admin secret from environment variable
+const adminSecret = process.env.NHOST_ADMIN_SECRET || 'F$Iv7SMMyg*h5,8n(dC4Xfo#z-@^w80b';
 
 console.log("Starting update function with backend URL:", backendUrl);
 
-// Initialize Nhost without admin secret (use public role)
+// Initialize Nhost with admin secret to have write permissions
 const nhost = new NhostClient({
   backendUrl: backendUrl,
+  adminSecret: adminSecret
 });
 
 export default async (req, res) => {
@@ -88,6 +91,11 @@ export default async (req, res) => {
           _set: { seen: true, seen_at: $date }
         ) {
           affected_rows
+          returning {
+            id
+            seen
+            seen_at
+          }
         }
       }
     `;
@@ -96,10 +104,13 @@ export default async (req, res) => {
     const currentTime = new Date().toISOString();
     console.log(`Updating email ${emailId} as seen at ${currentTime}`);
     
+    // Convert ID to number if it's stored as string
+    const numericId = parseInt(emailId, 10);
+    
     const { data: updateData, error: updateError } = await nhost.graphql.request(
       UPDATE_QUERY,
       {
-        id: emailId,
+        id: numericId,
         date: currentTime,
       }
     );
