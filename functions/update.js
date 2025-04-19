@@ -1,158 +1,92 @@
 import { NhostClient } from "@nhost/nhost-js";
 
-// Use the exact GraphQL endpoint from the API Explorer
-const graphqlUrl = 'https://ttgygockyojigiwmkjsl.hasura.ap-south-1.nhost.run/v1/graphql';
-// Get admin secret from environment variable
-const adminSecret = process.env.NHOST_ADMIN_SECRET || process.env.HASURA_GRAPHQL_ADMIN_SECRET;
-
-console.log("Starting update function with GraphQL URL:", graphqlUrl);
-console.log("Admin secret available:", !!adminSecret);
-
-// Initialize Nhost with admin secret for elevated permissions and the correct GraphQL endpoint
-const nhost = new NhostClient({
-  graphqlUrl: graphqlUrl,
-  adminSecret: adminSecret
-});
-
+// Simplified function with better error handling
 export default async (req, res) => {
-  // CORS headers - enable for all origins
-  res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
-
-  if (req.method === 'OPTIONS') {
-    return res.status(200).end();
-  }
-
-  // Log the request for debugging
-  console.log("Received request:", {
-    method: req.method,
-    url: req.url,
-    query: req.query,
-    headers: req.headers,
-  });
-
-  const imgText = req.query.text;
-  console.log("Processing tracking pixel for imgText:", imgText);
-
-  if (!imgText) {
-    console.error("No image token provided");
-    // Still return the pixel image
-    res.setHeader('Content-Type', 'image/gif');
-    res.send(Buffer.from('R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7', 'base64'));
-    return;
-  }
-
   try {
-    // First find the email ID for the provided tracking text
-    const FIND_EMAIL = `
-      query FindEmail($text: String!) {
+    // CORS headers
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+
+    if (req.method === 'OPTIONS') {
+      return res.status(200).end();
+    }
+
+    // Always return the 1x1 tracking pixel GIF regardless of processing
+    // This ensures emails don't break even if there's an error
+    const sendPixel = () => {
+      res.setHeader('Content-Type', 'image/gif');
+      res.send(Buffer.from('R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7', 'base64'));
+    };
+
+    const imgText = req.query.text;
+    console.log("Processing tracking pixel for:", imgText);
+
+    // If no text parameter, just return the pixel
+    if (!imgText) {
+      console.log("No tracking ID provided");
+      return sendPixel();
+    }
+
+    // Initialize Nhost client - use environment variables or fallback values
+    const nhost = new NhostClient({
+      subdomain: process.env.REACT_APP_NHOST_SUBDOMAIN || "ttgygockyojigiwmkjsl",
+      region: process.env.REACT_APP_NHOST_REGION || "ap-south-1",
+      adminSecret: process.env.NHOST_ADMIN_SECRET
+    });
+
+    // Simple query to find the email
+    const { data, error } = await nhost.graphql.request(
+      `query GetEmail($text: String!) {
         emails(where: {img_text: {_eq: $text}}) {
           id
           seen
         }
-      }
-    `;
-
-    console.log("Searching for email with text:", imgText);
-    const { data: findData, error: findError } = await nhost.graphql.request(
-      FIND_EMAIL, 
-      { text: imgText },
-      // Add explicit headers to ensure admin role is used
-      { 
-        'x-hasura-role': 'admin',
-        'content-type': 'application/json',
-        'x-hasura': 'true'
-      }
+      }`,
+      { text: imgText }
     );
-    
-    if (findError) {
-      console.error("Error finding email:", findError);
-      // Return pixel anyway
-      res.setHeader('Content-Type', 'image/gif');
-      res.send(Buffer.from('R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7', 'base64'));
-      return;
+
+    if (error || !data?.emails?.length) {
+      console.log("Query error or no emails found:", error || "No matching emails");
+      return sendPixel();
     }
 
-    console.log("Find email result:", findData);
+    const email = data.emails[0];
     
-    if (!findData || !findData.emails || findData.emails.length === 0) {
-      console.error("No email found with text:", imgText);
-      // Return pixel anyway
-      res.setHeader('Content-Type', 'image/gif');
-      res.send(Buffer.from('R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7', 'base64'));
-      return;
-    }
-
-    const email = findData.emails[0];
-    console.log("Found email:", email);
-    
+    // Skip update if already seen
     if (email.seen) {
       console.log("Email already marked as seen");
-      res.setHeader('Content-Type', 'image/gif');
-      res.send(Buffer.from('R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7', 'base64'));
-      return;
+      return sendPixel();
     }
 
-    console.log("Attempting to update email id:", email.id);
-
-    // Using the exact mutation format provided by the user
-    const UPDATE_MUTATION = `
-      mutation UpdateEmailSeen($id: Int!) {
+    // Update the email status
+    const updateResult = await nhost.graphql.request(
+      `mutation UpdateEmail($id: Int!) {
         update_emails_by_pk(
-          pk_columns: {id: $id}, 
+          pk_columns: {id: $id},
           _set: {
-            seen: true, 
+            seen: true,
             seen_at: "now()"
           }
         ) {
           id
-          seen
-          seen_at
         }
-      }
-    `;
+      }`,
+      { id: parseInt(email.id, 10) }
+    );
 
-    // Let's try with this exact mutation format
-    let updateData, updateError;
-    try {
-      console.log("Using provided mutation format");
-      const result = await nhost.graphql.request(
-        UPDATE_MUTATION,
-        { id: parseInt(email.id, 10) },
-        { 
-          'x-hasura-role': 'admin',
-          'content-type': 'application/json',
-          'x-hasura': 'true'
-        }
-      );
-      updateData = result.data;
-      updateError = result.error;
-    } catch (err) {
-      console.error("Mutation failed:", err);
-      updateError = err;
-    }
-
-    if (updateError) {
-      console.error("Failed to update email:", updateError);
-      // Return pixel anyway
-      res.setHeader('Content-Type', 'image/gif');
-      res.send(Buffer.from('R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7', 'base64'));
-      return;
-    }
-
-    if (updateData) {
-      console.log("Email successfully updated:", updateData);
+    if (updateResult.error) {
+      console.log("Update error:", updateResult.error);
     } else {
-      console.log("Update operation completed but no data returned");
+      console.log("Successfully updated email with ID:", email.id);
     }
 
-    // Always return the pixel image
-    res.setHeader('Content-Type', 'image/gif');
-    res.send(Buffer.from('R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7', 'base64'));
+    // Always return the pixel, even if the update fails
+    return sendPixel();
   } catch (error) {
-    console.error("Unhandled error in serverless function:", error);
-    // Always return the tracking pixel, even on error
+    console.error("Unhandled error:", error);
+    
+    // Return the pixel even if there's an error
     res.setHeader('Content-Type', 'image/gif');
     res.send(Buffer.from('R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7', 'base64'));
   }
