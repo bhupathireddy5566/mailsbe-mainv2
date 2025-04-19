@@ -5,6 +5,7 @@ import {
   FormHelperText,
   FormControl,
   Button,
+  Box,
 } from "@mui/material";
 import LoadingButton from "@mui/lab/LoadingButton";
 import SaveIcon from "@mui/icons-material/Save";
@@ -175,33 +176,36 @@ const PopUp = ({ setPopUp }) => {
               fullWidth
               value={name}
               onChange={(e) => setName(e.target.value)}
+              sx={{ marginBottom: 2 }}
             />
 
-            <div className={styles.copyBox}>
-              <div className={styles.imgDiv} ref={ref}>
-                {name && (
-                  <>
-                    <Typography variant="body1" component="p" align="center" gutterBottom>
-                      Copy the tracking code below and paste it at the end of your email
-                    </Typography>
-                    
-                    <Button
-                      variant="outlined"
-                      startIcon={<ContentCopyIcon />}
-                      onClick={copyTrackingCode}
-                      fullWidth
-                      sx={{ mb: 2 }}
-                    >
-                      Copy Tracking Code
-                    </Button>
-                    
-                    <Typography variant="caption" color="textSecondary" align="center">
-                      The tracking code is an invisible pixel that will notify you when your email is opened
-                    </Typography>
-                  </>
-                )}
-              </div>
-            </div>
+            <Box sx={{ 
+              border: '1px solid #e0e0e0', 
+              borderRadius: 1, 
+              padding: 2,
+              marginBottom: 2,
+              backgroundColor: '#f5f5f5'
+            }}>
+              <Typography variant="subtitle1" gutterBottom sx={{ fontWeight: 'medium' }}>
+                Copy the tracking code below and paste it at the end of your email
+              </Typography>
+              
+              <Box sx={{ display: 'flex', alignItems: 'center', marginY: 2 }}>
+                <Button
+                  variant="contained"
+                  color="primary"
+                  startIcon={<ContentCopyIcon />}
+                  onClick={copyTrackingCode}
+                  sx={{ flexGrow: 1 }}
+                >
+                  COPY TRACKING CODE
+                </Button>
+              </Box>
+              
+              <Typography variant="caption" color="textSecondary">
+                The tracking code is an invisible pixel that will notify you when your email is opened
+              </Typography>
+            </Box>
 
             {error && (
               <FormHelperText>{`Error occured! ${error.message}`}</FormHelperText>
