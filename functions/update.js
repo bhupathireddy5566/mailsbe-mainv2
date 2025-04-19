@@ -1,7 +1,7 @@
 import { NhostClient } from "@nhost/nhost-js";
 
-// Use the exact GraphQL URL from environment variables instead of constructing it
-const graphqlUrl = process.env.NHOST_GRAPHQL_URL || 'https://ttgygockyojigiwmkjsl.graphql.ap-south-1.nhost.run/v1';
+// Use the exact GraphQL endpoint from the API Explorer
+const graphqlUrl = 'https://ttgygockyojigiwmkjsl.hasura.ap-south-1.nhost.run/v1/graphql';
 // Get admin secret from environment variable
 const adminSecret = process.env.NHOST_ADMIN_SECRET || process.env.HASURA_GRAPHQL_ADMIN_SECRET;
 
@@ -44,7 +44,7 @@ export default async (req, res) => {
   }
 
   try {
-    // Direct SQL approach with hasura_role as admin
+    // First find the email ID for the provided tracking text
     const FIND_EMAIL = `
       query FindEmail($text: String!) {
         emails(where: {img_text: {_eq: $text}}) {
@@ -61,7 +61,8 @@ export default async (req, res) => {
       // Add explicit headers to ensure admin role is used
       { 
         'x-hasura-role': 'admin',
-        'x-hasura-admin-secret': adminSecret
+        'content-type': 'application/json',
+        'x-hasura': 'true'
       }
     );
     
@@ -93,7 +94,9 @@ export default async (req, res) => {
       return;
     }
 
-    // Now use a direct update mutation with admin permissions
+    console.log("Attempting to update email id:", email.id);
+
+    // Using the exact mutation format provided by the user
     const UPDATE_MUTATION = `
       mutation UpdateEmailSeen($id: Int!) {
         update_emails_by_pk(
@@ -110,16 +113,25 @@ export default async (req, res) => {
       }
     `;
 
-    console.log("Attempting to update email id:", email.id);
-    const { data: updateData, error: updateError } = await nhost.graphql.request(
-      UPDATE_MUTATION,
-      { id: parseInt(email.id, 10) },
-      // Add explicit headers to ensure admin role is used 
-      { 
-        'x-hasura-role': 'admin',
-        'x-hasura-admin-secret': adminSecret
-      }
-    );
+    // Let's try with this exact mutation format
+    let updateData, updateError;
+    try {
+      console.log("Using provided mutation format");
+      const result = await nhost.graphql.request(
+        UPDATE_MUTATION,
+        { id: parseInt(email.id, 10) },
+        { 
+          'x-hasura-role': 'admin',
+          'content-type': 'application/json',
+          'x-hasura': 'true'
+        }
+      );
+      updateData = result.data;
+      updateError = result.error;
+    } catch (err) {
+      console.error("Mutation failed:", err);
+      updateError = err;
+    }
 
     if (updateError) {
       console.error("Failed to update email:", updateError);
@@ -129,7 +141,11 @@ export default async (req, res) => {
       return;
     }
 
-    console.log("Email successfully updated:", updateData);
+    if (updateData) {
+      console.log("Email successfully updated:", updateData);
+    } else {
+      console.log("Update operation completed but no data returned");
+    }
 
     // Always return the pixel image
     res.setHeader('Content-Type', 'image/gif');
