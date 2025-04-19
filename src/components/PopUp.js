@@ -12,164 +12,159 @@ import toast from "react-hot-toast";
 import { useUserData } from "@nhost/react";
 
 import styles from "../styles/components/Popup.module.css";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
+import { gql, useMutation } from "@apollo/client";
+
+const ADD_EMAIL = gql`
+  mutation addEmail(
+    $email: String!
+    $description: String!
+    $img_text: String!
+    $user_id: String!
+  ) {
+    insert_emails_one(object: {
+      description: $description
+      email: $email
+      img_text: $img_text
+      user_id: $user_id
+    }) {
+      id
+      email
+      description
+      img_text
+      seen
+      created_at
+    }
+  }
+`;
 
 const PopUp = ({ setPopUp }) => {
+  //get the user data
   const user = useUserData();
+
   const [email, setEmail] = useState("");
   const [description, setDescription] = useState("");
-  const [name, setName] = useState(user.displayName || "");
+  const [name, setName] = useState(user.displayName);
   const [imgText, setImgText] = useState("");
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState(null);
 
-  // Correct REST endpoint configuration
-  const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL;
-  const restEndpoint = `${backendUrl}/api/rest/update-seen-status`;
+  const [addEmail, { data, loading, error }] = useMutation(ADD_EMAIL);
 
-  useEffect(() => {
-    if (!backendUrl) {
-      setError("Missing backend configuration");
-      return;
-    }
-
-    if (!user.id) return;
-
-    const timestamp = Date.now();
-    setImgText(
-      `${restEndpoint}?text=${timestamp}&user_id=${user.id}`
-    );
-  }, [user.id, backendUrl]);
+  const ref = useRef();
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    setLoading(true);
-    setError(null);
 
     try {
-      // Validate required fields
-      if (!email || !description) {
-        throw new Error("Please fill all required fields");
-      }
-
-      // GraphQL mutation for email insertion
-      const response = await fetch(
-        `${backendUrl}/v1/graphql`,
-        {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            // Use user token for security
-            Authorization: `Bearer ${user.accessToken}`,
-          },
-          body: JSON.stringify({
-            query: `
-              mutation AddEmail(
-                $email: String!,
-                $description: String!,
-                $img_text: String!,
-                $user_id: uuid!
-              ) {
-                insert_emails_one(object: {
-                  email: $email,
-                  description: $description,
-                  img_text: $img_text,
-                  user_id: $user_id
-                }) {
-                  id
-                }
-              }
-            `,
-            variables: {
-              email,
-              description,
-              img_text: imgText,
-              user_id: user.id,
-            },
-          }),
-        }
-      );
-
-      const result = await response.json();
-
-      if (result.errors) {
-        throw new Error(result.errors[0].message);
-      }
-
+      await addEmail({
+        variables: {
+          email: email,
+          description: description,
+          img_text: imgText.split("=")[1],
+          user_id: user.id,
+        },
+      });
       toast.success("Email added successfully");
       setPopUp(false);
+      window.location.reload();
     } catch (err) {
-      setError(err.message || "Something went wrong");
-      toast.error("Failed to add email");
-    } finally {
-      setLoading(false);
+      toast.error("Unable to add email");
     }
   };
+
+  useEffect(() => {
+    const time = new Date().getTime();
+    setImgText(
+      `https://ttgygockyojigiwmkjsl.nhost.run/v1/functions/update?text=${time}`
+    );
+  }, []);
 
   return (
     <div className={styles.popup}>
       <div className={styles.popUpDiv}>
         <div className={styles.header}>
-          <Typography variant="h6">Add New Email</Typography>
-          <IconButton onClick={() => setPopUp(false)}>
+          <Typography variant="h6" component="h4">
+            Enter new email details
+          </Typography>
+
+          <IconButton aria-label="close" onClick={() => setPopUp(false)}>
             <HighlightOffIcon />
           </IconButton>
         </div>
-        <form onSubmit={handleSubmit}>
-          <FormControl fullWidth error={!!error}>
+        <form className={styles.groupForm} onSubmit={handleSubmit}>
+          <FormControl sx={{ m: 0, width: "100%" }} error={error}>
             <TextField
-              label="Email Address"
+              className={styles.inputOutlinedTextField}
+              fullWidth
+              color="primary"
+              variant="outlined"
+              type="email"
+              label="Email"
+              placeholder="Receiver's email"
+              size="medium"
+              margin="none"
+              required
               value={email}
               onChange={(e) => setEmail(e.target.value)}
-              required
-              fullWidth
-              margin="normal"
             />
             <TextField
+              className={styles.textAreaOutlinedTextField}
+              color="primary"
+              variant="outlined"
+              multiline
               label="Description"
+              placeholder="Some distinct description"
+              helperText="This text will help to seperate emails."
+              required
+              fullWidth
               value={description}
               onChange={(e) => setDescription(e.target.value)}
-              multiline
-              rows={3}
+            />
+
+            <TextField
+              color="primary"
+              variant="outlined"
+              label="Your Name"
+              placeholder="Enter your full name"
+              helperText="An image will be attached with this text."
               required
               fullWidth
-              margin="normal"
-            />
-            <TextField
-              label="Your Name"
               value={name}
               onChange={(e) => setName(e.target.value)}
-              fullWidth
-              margin="normal"
             />
-            
-            {/* Tracking pixel preview */}
+
             <div className={styles.copyBox}>
-              <div className={styles.imgDiv}>
-                {name?.[0] || ''}
+              <div className={styles.imgDiv} ref={ref}>
+                {name && name.substring(0, 1)}
                 <img
                   src={imgText}
-                  alt="Tracking pixel"
                   className={styles.pixelImg}
+                  width={1}
+                  height={1}
+                  alt="Tracking pixel"
                 />
-                {name?.slice(1) || ''}
+                {name && name.substring(1, name.length)}
               </div>
               <span className={styles.imgHelperText}>
-                Copy this text into your email
+                Copy this text and paste it in the email.{" "}
+                <strong>Imp: Don't erase it after pasting.</strong>
               </span>
             </div>
 
-            {error && <FormHelperText>{error}</FormHelperText>}
+            {error && (
+              <FormHelperText>{`Error occured! ${error.message}`}</FormHelperText>
+            )}
 
             <LoadingButton
+              className={styles.buttonContainedText}
+              variant="contained"
+              color="primary"
+              endIcon={<SaveIcon />}
+              size="large"
+              fullWidth
               type="submit"
               loading={loading}
-              variant="contained"
-              startIcon={<SaveIcon />}
-              fullWidth
-              sx={{ mt: 2 }}
             >
-              Save Email
+              Save
             </LoadingButton>
           </FormControl>
         </form>
