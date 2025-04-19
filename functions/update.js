@@ -1,6 +1,6 @@
 import { NhostClient } from "@nhost/nhost-js";
 
-const backendUrl = process.env.NHOST_BACKEND_URL;
+const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL;
 
 // Initialize Nhost without admin secret (use public role)
 const nhost = new NhostClient({
