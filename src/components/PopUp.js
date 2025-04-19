@@ -23,17 +23,23 @@ const PopUp = ({ setPopUp }) => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
 
-  // Correct REST endpoint URL for tracking pixel
-  const restEndpoint = `${process.env.NEXT_PUBLIC_BACKEND_URL}/api/rest/update-seen-status`;
+  // Correct REST endpoint configuration
+  const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL;
+  const restEndpoint = `${backendUrl}/api/rest/update-seen-status`;
 
   useEffect(() => {
+    if (!backendUrl) {
+      setError("Missing backend configuration");
+      return;
+    }
+
     if (!user.id) return;
 
     const timestamp = Date.now();
     setImgText(
       `${restEndpoint}?text=${timestamp}&user_id=${user.id}`
     );
-  }, [user.id]);
+  }, [user.id, backendUrl]);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -48,12 +54,12 @@ const PopUp = ({ setPopUp }) => {
 
       // GraphQL mutation for email insertion
       const response = await fetch(
-        `${process.env.NEXT_PUBLIC_BACKEND_URL}/v1/graphql`,
+        `${backendUrl}/v1/graphql`,
         {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
-            // Use user token instead of admin secret
+            // Use user token for security
             Authorization: `Bearer ${user.accessToken}`,
           },
           body: JSON.stringify({
