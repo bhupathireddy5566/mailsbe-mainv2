@@ -97,6 +97,12 @@ const PopUp = ({ setPopUp }) => {
     const trackingUrl = `${functionsUrl}/update?text=${time}`;
     console.log("Generated tracking URL:", trackingUrl);
     console.log("Tracking ID:", time);
+    
+    // Test the tracking URL to make sure it's accessible
+    fetch(trackingUrl, { method: 'HEAD' })
+      .then(() => console.log("Tracking URL is accessible"))
+      .catch(err => console.warn("Tracking URL might not be accessible, but this is often normal in development:", err));
+    
     setImgText(trackingUrl);
   }, []);
 
@@ -163,6 +169,7 @@ const PopUp = ({ setPopUp }) => {
                   width={1}
                   height={1}
                   alt="Tracking pixel"
+                  onLoad={() => console.log("Tracking pixel loaded successfully")}
                   onError={(e) => console.error("Failed to load tracking pixel:", e)}
                 />
                 {name && name.substring(1, name.length)}

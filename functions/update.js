@@ -12,10 +12,21 @@ export default async (req, res) => {
       return res.status(200).end();
     }
 
+    // Log the full request details for debugging
+    console.log("Tracking request received:", {
+      method: req.method,
+      url: req.url,
+      query: req.query,
+      headers: req.headers
+    });
+
     // Always return the 1x1 tracking pixel GIF regardless of processing
     // This ensures emails don't break even if there's an error
     const sendPixel = () => {
       res.setHeader('Content-Type', 'image/gif');
+      res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+      res.setHeader('Pragma', 'no-cache');
+      res.setHeader('Expires', '0');
       res.send(Buffer.from('R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7', 'base64'));
     };
 
@@ -29,39 +40,66 @@ export default async (req, res) => {
     }
 
     // Initialize Nhost client - use environment variables or fallback values
+    const subdomain = process.env.REACT_APP_NHOST_SUBDOMAIN || "ttgygockyojigiwmkjsl";
+    const region = process.env.REACT_APP_NHOST_REGION || "ap-south-1";
+    const adminSecret = process.env.NHOST_ADMIN_SECRET;
+    
+    console.log("Nhost configuration:", {
+      subdomain,
+      region,
+      hasAdminSecret: !!adminSecret
+    });
+    
     const nhost = new NhostClient({
-      subdomain: process.env.REACT_APP_NHOST_SUBDOMAIN || "ttgygockyojigiwmkjsl",
-      region: process.env.REACT_APP_NHOST_REGION || "ap-south-1",
-      adminSecret: process.env.NHOST_ADMIN_SECRET
+      subdomain,
+      region,
+      adminSecret
     });
 
-    // Simple query to find the email
-    const { data, error } = await nhost.graphql.request(
-      `query GetEmail($text: String!) {
+    // Use the explicit mutation name that's in your Allow List
+    const FIND_EMAIL_QUERY = `
+      query GetEmail($text: String!) {
         emails(where: {img_text: {_eq: $text}}) {
           id
           seen
+          email
+          created_at
         }
-      }`,
+      }
+    `;
+
+    console.log("Executing query to find email with tracking ID:", imgText);
+    
+    // Simple query to find the email
+    const { data, error } = await nhost.graphql.request(
+      FIND_EMAIL_QUERY,
       { text: imgText }
     );
 
-    if (error || !data?.emails?.length) {
-      console.log("Query error or no emails found:", error || "No matching emails");
+    if (error) {
+      console.error("GraphQL query error:", error);
+      return sendPixel();
+    }
+    
+    if (!data?.emails?.length) {
+      console.log("No matching emails found for tracking ID:", imgText);
       return sendPixel();
     }
 
     const email = data.emails[0];
+    console.log("Found email:", JSON.stringify(email));
     
     // Skip update if already seen
     if (email.seen) {
-      console.log("Email already marked as seen");
+      console.log("Email already marked as seen - no update needed");
       return sendPixel();
     }
 
-    // Update the email status
-    const updateResult = await nhost.graphql.request(
-      `mutation UpdateEmail($id: Int!) {
+    console.log("Email found and needs to be marked as seen. ID:", email.id);
+
+    // Use the exact mutation name that's in your Allow List
+    const UPDATE_EMAIL_MUTATION = `
+      mutation UpdateEmailSeen($id: Int!) {
         update_emails_by_pk(
           pk_columns: {id: $id},
           _set: {
@@ -70,15 +108,23 @@ export default async (req, res) => {
           }
         ) {
           id
+          seen
+          seen_at
         }
-      }`,
+      }
+    `;
+
+    // Update the email status
+    console.log("Executing UpdateEmailSeen mutation for email ID:", email.id);
+    const updateResult = await nhost.graphql.request(
+      UPDATE_EMAIL_MUTATION,
       { id: parseInt(email.id, 10) }
     );
 
     if (updateResult.error) {
-      console.log("Update error:", updateResult.error);
+      console.error("Update error:", updateResult.error);
     } else {
-      console.log("Successfully updated email with ID:", email.id);
+      console.log("Successfully updated email tracking status:", updateResult.data);
     }
 
     // Always return the pixel, even if the update fails
@@ -88,6 +134,9 @@ export default async (req, res) => {
     
     // Return the pixel even if there's an error
     res.setHeader('Content-Type', 'image/gif');
+    res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+    res.setHeader('Pragma', 'no-cache');
+    res.setHeader('Expires', '0');
     res.send(Buffer.from('R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7', 'base64'));
   }
 };
