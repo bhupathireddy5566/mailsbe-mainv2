@@ -1,6 +1,9 @@
 import { NhostClient } from "@nhost/nhost-js";
 
-const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL;
+// Make sure we have a backend URL - provide fallback if needed
+const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || 'https://ttgygockyojigiwmkjsl.ap-south-1.nhost.run';
+
+console.log("Starting update function with backend URL:", backendUrl);
 
 // Initialize Nhost without admin secret (use public role)
 const nhost = new NhostClient({
@@ -8,7 +11,7 @@ const nhost = new NhostClient({
 });
 
 export default async (req, res) => {
-  // CORS headers
+  // CORS headers - enable for all origins
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
@@ -17,10 +20,19 @@ export default async (req, res) => {
     return res.status(200).end();
   }
 
+  // Log the request for debugging
+  console.log("Received request:", {
+    method: req.method,
+    url: req.url,
+    query: req.query,
+    headers: req.headers,
+  });
+
   const imgText = req.query.text;
-  console.log("imgText", imgText);
+  console.log("Processing tracking pixel for imgText:", imgText);
 
   if (!imgText) {
+    console.error("No image token provided");
     return res.status(400).json({ error: "No image token provided" });
   }
 
@@ -36,23 +48,36 @@ export default async (req, res) => {
 
   try {
     // Fetch email details
+    console.log("Fetching email details for text:", imgText);
     const { data, error } = await nhost.graphql.request(GET_EMAIL_ID, {
       text: imgText,
     });
 
     if (error) {
+      console.error("GraphQL query error:", error);
       return res.status(500).json({ error: error.message });
     }
 
+    console.log("Email query result:", data);
+
     if (!data || !data.emails || data.emails.length === 0) {
-      return res.status(404).json({ error: "No email found" });
+      console.error("No email found for text:", imgText);
+      // Return the pixel image anyway to avoid breaking email clients
+      res.setHeader('Content-Type', 'image/gif');
+      res.send(Buffer.from('R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7', 'base64'));
+      return;
     }
 
     const emailId = data.emails[0].id;
     const seen = data.emails[0].seen;
+    console.log(`Email found with ID ${emailId}, seen status: ${seen}`);
 
     if (seen) {
-      return res.status(200).json({ message: "Email already marked as seen" });
+      console.log("Email already marked as seen");
+      // Return the pixel image anyway 
+      res.setHeader('Content-Type', 'image/gif');
+      res.send(Buffer.from('R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7', 'base64'));
+      return;
     }
 
     // Mutation to update email status
@@ -68,23 +93,35 @@ export default async (req, res) => {
     `;
 
     // Execute update
+    const currentTime = new Date().toISOString();
+    console.log(`Updating email ${emailId} as seen at ${currentTime}`);
+    
     const { data: updateData, error: updateError } = await nhost.graphql.request(
       UPDATE_QUERY,
       {
         id: emailId,
-        date: new Date().toISOString(), // Use ISO string for timestamptz
+        date: currentTime,
       }
     );
 
     if (updateError) {
-      return res.status(500).json({ error: updateError.message });
+      console.error("Update error:", updateError);
+      // Still return the image even if update fails
+      res.setHeader('Content-Type', 'image/gif');
+      res.send(Buffer.from('R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7', 'base64'));
+      return;
     }
+
+    console.log("Update successful:", updateData);
 
     // Return 1x1 pixel
     res.setHeader('Content-Type', 'image/gif');
+    console.log("Sending tracking pixel response");
     res.send(Buffer.from('R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7', 'base64'));
   } catch (error) {
-    console.error(error);
-    res.status(500).json({ error: error.message });
+    console.error("Unhandled error in update function:", error);
+    // Always return the tracking pixel, even on error
+    res.setHeader('Content-Type', 'image/gif');
+    res.send(Buffer.from('R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7', 'base64'));
   }
 };

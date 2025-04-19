@@ -84,4 +84,9 @@
 
 .pixelImg {
   opacity: 0;
+  position: absolute;
+  height: 1px !important;
+  width: 1px !important;
+  z-index: -1;
+  pointer-events: none;
 }

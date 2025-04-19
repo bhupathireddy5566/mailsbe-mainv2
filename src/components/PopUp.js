@@ -15,10 +15,10 @@ import styles from "../styles/components/Popup.module.css";
 import { useState, useEffect, useRef } from "react";
 import { gql, useMutation } from "@apollo/client";
 
-// Get backend URL from environment variable
-const backendUrl = process.env.REACT_APP_NHOST_SUBDOMAIN && process.env.REACT_APP_NHOST_REGION 
+// Get backend URL from environment variable - ensure no trailing slash
+const backendUrl = (process.env.REACT_APP_NHOST_SUBDOMAIN && process.env.REACT_APP_NHOST_REGION 
   ? `https://${process.env.REACT_APP_NHOST_SUBDOMAIN}.${process.env.REACT_APP_NHOST_REGION}.nhost.run` 
-  : process.env.NEXT_PUBLIC_BACKEND_URL;
+  : process.env.NEXT_PUBLIC_BACKEND_URL || 'https://ttgygockyojigiwmkjsl.ap-south-1.nhost.run').replace(/\/$/, '');
 
 const ADD_EMAIL = gql`
   mutation addEmail(
@@ -58,13 +58,20 @@ const PopUp = ({ setPopUp }) => {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    
+    // Extract the tracking ID (timestamp) from the URL
+    const trackingId = imgText.split("=")[1];
+    if (!trackingId) {
+      toast.error("Invalid tracking URL");
+      return;
+    }
 
     try {
       await addEmail({
         variables: {
           email: email,
           description: description,
-          img_text: imgText.split("=")[1],
+          img_text: trackingId,
           user_id: user.id,
         },
       });
@@ -72,15 +79,17 @@ const PopUp = ({ setPopUp }) => {
       setPopUp(false);
       window.location.reload();
     } catch (err) {
+      console.error("Error adding email:", err);
       toast.error("Unable to add email");
     }
   };
 
   useEffect(() => {
+    // Generate a unique timestamp for tracking
     const time = new Date().getTime();
-    setImgText(
-      `${backendUrl}/v1/functions/update?text=${time}`
-    );
+    const trackingUrl = `${backendUrl}/v1/functions/update?text=${time}`;
+    console.log("Generated tracking URL:", trackingUrl);
+    setImgText(trackingUrl);
   }, []);
 
   return (
@@ -146,6 +155,7 @@ const PopUp = ({ setPopUp }) => {
                   width={1}
                   height={1}
                   alt="Tracking pixel"
+                  onError={(e) => console.error("Failed to load tracking pixel:", e)}
                 />
                 {name && name.substring(1, name.length)}
               </div>
