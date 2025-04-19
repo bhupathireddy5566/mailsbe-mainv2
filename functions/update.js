@@ -10,12 +10,22 @@ const nhost = new NhostClient({
 nhost.graphql.setAccessToken(accessToken);
 
 export default async (req, res) => {
+  // Set CORS headers
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+
+  // Handle preflight requests
+  if (req.method === 'OPTIONS') {
+    return res.status(200).end();
+  }
+
   // get the data from the request
   const imgText = req.query.text;
   console.log("imgText", imgText);
 
   if (!imgText) {
-    return res.status(500).json({ error: "No image token provided" });
+    return res.status(400).json({ error: "No image token provided" });
   }
 
   // make a get query to get email id using imgText
@@ -44,8 +54,8 @@ export default async (req, res) => {
       return res.status(500).json({ error: error.message });
     }
 
-    if (!data) {
-      return res.status(500).json({ error: "No email found" });
+    if (!data || !data.emails || data.emails.length === 0) {
+      return res.status(404).json({ error: "No email found" });
     }
 
     // extract the email id from the response
@@ -53,7 +63,7 @@ export default async (req, res) => {
     const seen = data.emails[0].seen;
 
     if (seen) {
-      return res.status(500).json({ error: "Kaam hogaya vai" });
+      return res.status(200).json({ message: "Email already marked as seen" });
     }
 
     //update the seen column in emails table
@@ -64,12 +74,14 @@ export default async (req, res) => {
       });
 
     if (updateError) {
-      return res.status(500).json({ error: error.message });
+      return res.status(500).json({ error: updateError.message });
     }
 
-    res.status(404).send({ error: "Bye bye" });
+    // Return a 1x1 transparent pixel
+    res.setHeader('Content-Type', 'image/gif');
+    res.send(Buffer.from('R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7', 'base64'));
   } catch (error) {
     console.log(error);
-    res.status(500).json({ error });
+    res.status(500).json({ error: error.message });
   }
 };
