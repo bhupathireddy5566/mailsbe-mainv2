@@ -17,20 +17,23 @@ import { gql, useMutation } from "@apollo/client";
 
 const ADD_EMAIL = gql`
   mutation addEmail(
-    $email: String
-    $description: String
-    $img_text: String
-    $user: String
+    $email: String!
+    $description: String!
+    $img_text: String!
+    $user_id: String!
   ) {
-    insert_emails(
-      objects: {
-        description: $description
-        email: $email
-        img_text: $img_text
-        user: $user
-      }
-    ) {
-      affected_rows
+    insert_emails_one(object: {
+      description: $description
+      email: $email
+      img_text: $img_text
+      user_id: $user_id
+    }) {
+      id
+      email
+      description
+      img_text
+      seen
+      created_at
     }
   }
 `;
@@ -57,7 +60,7 @@ const PopUp = ({ setPopUp }) => {
           email: email,
           description: description,
           img_text: imgText.split("=")[1],
-          user: user.id,
+          user_id: user.id,
         },
       });
       toast.success("Email added successfully");
