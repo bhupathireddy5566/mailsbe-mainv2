@@ -7,8 +7,8 @@ import toast from "react-hot-toast";
 import { useEffect, useState } from "react";
 
 const GET_EMAILS = gql`
-  query getEmails($user: String) {
-    emails(order_by: { created_at: desc }, where: { user: { _eq: $user } }) {
+  query getEmails($user_id: String) {
+    emails(order_by: { created_at: desc }, where: { user_id: { _eq: $user_id } }) {
       created_at
       description
       email
@@ -33,7 +33,7 @@ const EmailsTable = ({ styles }) => {
   const [emails, setEmails] = useState([]);
 
   const [getEmails, { loading, data }] = useLazyQuery(GET_EMAILS, {
-    variables: { user: user.id },
+    variables: { user_id: user.id },
   });
 
   const [deleteTodo] = useMutation(DELETE_EMAIL);
@@ -41,7 +41,7 @@ const EmailsTable = ({ styles }) => {
   const fetchEmails = async () => {
     try {
       await getEmails({
-        variables: { user: user.id },
+        variables: { user_id: user.id },
       });
 
       // toast.success("Emails fetched successfully");
