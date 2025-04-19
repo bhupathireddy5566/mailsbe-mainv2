@@ -1,17 +1,17 @@
 import { NhostClient } from "@nhost/nhost-js";
 
-// Make sure we have a backend URL - provide fallback if needed
-const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || 'https://ttgygockyojigiwmkjsl.ap-south-1.nhost.run';
+// Use the exact GraphQL URL from environment variables instead of constructing it
+const graphqlUrl = process.env.NHOST_GRAPHQL_URL || 'https://ttgygockyojigiwmkjsl.graphql.ap-south-1.nhost.run/v1';
 // Get admin secret from environment variable
-const adminSecret = process.env.NHOST_ADMIN_SECRET || 'F$Iv7SMMyg*h5,8n(dC4Xfo#z-@^w80b';
+const adminSecret = process.env.NHOST_ADMIN_SECRET || process.env.HASURA_GRAPHQL_ADMIN_SECRET;
 
-console.log("Starting update function with backend URL:", backendUrl);
+console.log("Starting update function with GraphQL URL:", graphqlUrl);
 console.log("Admin secret available:", !!adminSecret);
 
-// Initialize Nhost with admin secret for elevated permissions
+// Initialize Nhost with admin secret for elevated permissions and the correct GraphQL endpoint
 const nhost = new NhostClient({
-  backendUrl,
-  adminSecret
+  graphqlUrl: graphqlUrl,
+  adminSecret: adminSecret
 });
 
 export default async (req, res) => {
@@ -55,9 +55,15 @@ export default async (req, res) => {
     `;
 
     console.log("Searching for email with text:", imgText);
-    const { data: findData, error: findError } = await nhost.graphql.request(FIND_EMAIL, {
-      text: imgText
-    });
+    const { data: findData, error: findError } = await nhost.graphql.request(
+      FIND_EMAIL, 
+      { text: imgText },
+      // Add explicit headers to ensure admin role is used
+      { 
+        'x-hasura-role': 'admin',
+        'x-hasura-admin-secret': adminSecret
+      }
+    );
     
     if (findError) {
       console.error("Error finding email:", findError);
@@ -107,7 +113,12 @@ export default async (req, res) => {
     console.log("Attempting to update email id:", email.id);
     const { data: updateData, error: updateError } = await nhost.graphql.request(
       UPDATE_MUTATION,
-      { id: parseInt(email.id, 10) }
+      { id: parseInt(email.id, 10) },
+      // Add explicit headers to ensure admin role is used 
+      { 
+        'x-hasura-role': 'admin',
+        'x-hasura-admin-secret': adminSecret
+      }
     );
 
     if (updateError) {

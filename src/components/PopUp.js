@@ -15,10 +15,11 @@ import styles from "../styles/components/Popup.module.css";
 import { useState, useEffect, useRef } from "react";
 import { gql, useMutation } from "@apollo/client";
 
-// Get backend URL from environment variable - ensure no trailing slash
-const backendUrl = (process.env.REACT_APP_NHOST_SUBDOMAIN && process.env.REACT_APP_NHOST_REGION 
-  ? `https://${process.env.REACT_APP_NHOST_SUBDOMAIN}.${process.env.REACT_APP_NHOST_REGION}.nhost.run` 
-  : process.env.NEXT_PUBLIC_BACKEND_URL || 'https://ttgygockyojigiwmkjsl.ap-south-1.nhost.run').replace(/\/$/, '');
+// Use the correct functions URL from environment variable or fallback to a constructed one
+const functionsUrl = process.env.REACT_APP_FUNCTIONS_URL || 
+  (process.env.REACT_APP_NHOST_SUBDOMAIN && process.env.REACT_APP_NHOST_REGION 
+    ? `https://${process.env.REACT_APP_NHOST_SUBDOMAIN}.functions.${process.env.REACT_APP_NHOST_REGION}.nhost.run/v1` 
+    : 'https://ttgygockyojigiwmkjsl.functions.ap-south-1.nhost.run/v1');
 
 const ADD_EMAIL = gql`
   mutation addEmail(
@@ -95,7 +96,8 @@ const PopUp = ({ setPopUp }) => {
   useEffect(() => {
     // Generate a unique timestamp for tracking - use current time in milliseconds
     const time = new Date().getTime();
-    const trackingUrl = `${backendUrl}/v1/functions/update?text=${time}`;
+    // Use the correct functions URL with the update function
+    const trackingUrl = `${functionsUrl}/update?text=${time}`;
     console.log("Generated tracking URL:", trackingUrl);
     console.log("Tracking ID:", time);
     setImgText(trackingUrl);
