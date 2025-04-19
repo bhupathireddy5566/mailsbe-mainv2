@@ -4,10 +4,12 @@ import {
   IconButton,
   FormHelperText,
   FormControl,
+  Button,
 } from "@mui/material";
 import LoadingButton from "@mui/lab/LoadingButton";
 import SaveIcon from "@mui/icons-material/Save";
 import HighlightOffIcon from "@mui/icons-material/HighlightOff";
+import ContentCopyIcon from "@mui/icons-material/ContentCopy";
 import toast from "react-hot-toast";
 import { useUserData } from "@nhost/react";
 
@@ -106,6 +108,21 @@ const PopUp = ({ setPopUp }) => {
     setImgText(trackingUrl);
   }, []);
 
+  const copyTrackingCode = () => {
+    // Create the full HTML img tag for email tracking
+    const trackingCode = `<img src="${imgText}" width="1" height="1" alt="" style="display:none" />`;
+    
+    // Copy to clipboard
+    navigator.clipboard.writeText(trackingCode)
+      .then(() => {
+        toast.success("Tracking code copied to clipboard!");
+      })
+      .catch(err => {
+        console.error("Failed to copy tracking code:", err);
+        toast.error("Failed to copy tracking code");
+      });
+  };
+
   return (
     <div className={styles.popup}>
       <div className={styles.popUpDiv}>
@@ -162,22 +179,28 @@ const PopUp = ({ setPopUp }) => {
 
             <div className={styles.copyBox}>
               <div className={styles.imgDiv} ref={ref}>
-                {name && name.substring(0, 1)}
-                <img
-                  src={imgText}
-                  className={styles.pixelImg}
-                  width={1}
-                  height={1}
-                  alt="Tracking pixel"
-                  onLoad={() => console.log("Tracking pixel loaded successfully")}
-                  onError={(e) => console.error("Failed to load tracking pixel:", e)}
-                />
-                {name && name.substring(1, name.length)}
+                {name && (
+                  <>
+                    <Typography variant="body1" component="p" align="center" gutterBottom>
+                      Copy the tracking code below and paste it at the end of your email
+                    </Typography>
+                    
+                    <Button
+                      variant="outlined"
+                      startIcon={<ContentCopyIcon />}
+                      onClick={copyTrackingCode}
+                      fullWidth
+                      sx={{ mb: 2 }}
+                    >
+                      Copy Tracking Code
+                    </Button>
+                    
+                    <Typography variant="caption" color="textSecondary" align="center">
+                      The tracking code is an invisible pixel that will notify you when your email is opened
+                    </Typography>
+                  </>
+                )}
               </div>
-              <span className={styles.imgHelperText}>
-                Copy this text and paste it in the email.{" "}
-                <strong>Imp: Don't erase it after pasting.</strong>
-              </span>
             </div>
 
             {error && (

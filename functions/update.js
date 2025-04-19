@@ -1,142 +1,134 @@
-import { NhostClient } from "@nhost/nhost-js";
+// Direct Hasura approach - no Nhost client dependency
+const fetch = require('node-fetch');
 
-// Simplified function with better error handling
+// Configuration
+const HASURA_ENDPOINT = 'https://ttgygockyojigiwmkjsl.hasura.ap-south-1.nhost.run/v1/graphql';
+const HASURA_ADMIN_SECRET = process.env.NHOST_ADMIN_SECRET || process.env.HASURA_GRAPHQL_ADMIN_SECRET;
+
+// 1x1 transparent pixel as base64
+const TRACKING_PIXEL = 'R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7';
+
+// Simplified error handling and direct Hasura access
 export default async (req, res) => {
+  console.log(`Tracking pixel request received: ${req.url}`);
+
+  // Set up CORS and headers for the image response
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+  res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+  res.setHeader('Pragma', 'no-cache');
+  res.setHeader('Expires', '0');
+
+  // Handle preflight requests
+  if (req.method === 'OPTIONS') {
+    return res.status(200).end();
+  }
+
+  // Always set up the response to be a GIF image
+  res.setHeader('Content-Type', 'image/gif');
+  
   try {
-    // CORS headers
-    res.setHeader('Access-Control-Allow-Origin', '*');
-    res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
-    res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
-
-    if (req.method === 'OPTIONS') {
-      return res.status(200).end();
-    }
-
-    // Log the full request details for debugging
-    console.log("Tracking request received:", {
-      method: req.method,
-      url: req.url,
-      query: req.query,
-      headers: req.headers
-    });
-
-    // Always return the 1x1 tracking pixel GIF regardless of processing
-    // This ensures emails don't break even if there's an error
-    const sendPixel = () => {
-      res.setHeader('Content-Type', 'image/gif');
-      res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
-      res.setHeader('Pragma', 'no-cache');
-      res.setHeader('Expires', '0');
-      res.send(Buffer.from('R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7', 'base64'));
-    };
-
-    const imgText = req.query.text;
-    console.log("Processing tracking pixel for:", imgText);
-
-    // If no text parameter, just return the pixel
-    if (!imgText) {
-      console.log("No tracking ID provided");
-      return sendPixel();
-    }
-
-    // Initialize Nhost client - use environment variables or fallback values
-    const subdomain = process.env.REACT_APP_NHOST_SUBDOMAIN || "ttgygockyojigiwmkjsl";
-    const region = process.env.REACT_APP_NHOST_REGION || "ap-south-1";
-    const adminSecret = process.env.NHOST_ADMIN_SECRET;
+    // Get the tracking ID from the query parameters
+    const trackingId = req.query.text;
     
-    console.log("Nhost configuration:", {
-      subdomain,
-      region,
-      hasAdminSecret: !!adminSecret
-    });
+    if (!trackingId) {
+      console.log('No tracking ID provided');
+      return res.send(Buffer.from(TRACKING_PIXEL, 'base64'));
+    }
     
-    const nhost = new NhostClient({
-      subdomain,
-      region,
-      adminSecret
-    });
-
-    // Use the explicit mutation name that's in your Allow List
-    const FIND_EMAIL_QUERY = `
-      query GetEmail($text: String!) {
-        emails(where: {img_text: {_eq: $text}}) {
-          id
-          seen
-          email
-          created_at
+    console.log(`Processing tracking ID: ${trackingId}`);
+    
+    // Find the email with this tracking ID
+    const findEmailResponse = await fetch(HASURA_ENDPOINT, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-hasura-admin-secret': HASURA_ADMIN_SECRET
+      },
+      body: JSON.stringify({
+        query: `
+          query FindEmail($trackingId: String!) {
+            emails(where: {img_text: {_eq: $trackingId}}) {
+              id
+              seen
+              email
+            }
+          }
+        `,
+        variables: {
+          trackingId: trackingId
         }
-      }
-    `;
-
-    console.log("Executing query to find email with tracking ID:", imgText);
+      })
+    });
     
-    // Simple query to find the email
-    const { data, error } = await nhost.graphql.request(
-      FIND_EMAIL_QUERY,
-      { text: imgText }
-    );
-
-    if (error) {
-      console.error("GraphQL query error:", error);
-      return sendPixel();
+    // Parse the response
+    const findEmailResult = await findEmailResponse.json();
+    console.log('Find email result:', JSON.stringify(findEmailResult));
+    
+    // Check for errors or no emails found
+    if (findEmailResult.errors) {
+      console.error('GraphQL error:', findEmailResult.errors);
+      return res.send(Buffer.from(TRACKING_PIXEL, 'base64'));
     }
     
-    if (!data?.emails?.length) {
-      console.log("No matching emails found for tracking ID:", imgText);
-      return sendPixel();
+    if (!findEmailResult.data || !findEmailResult.data.emails || findEmailResult.data.emails.length === 0) {
+      console.log(`No email found with tracking ID: ${trackingId}`);
+      return res.send(Buffer.from(TRACKING_PIXEL, 'base64'));
     }
-
-    const email = data.emails[0];
-    console.log("Found email:", JSON.stringify(email));
+    
+    const email = findEmailResult.data.emails[0];
+    console.log(`Found email: ${JSON.stringify(email)}`);
     
     // Skip update if already seen
     if (email.seen) {
-      console.log("Email already marked as seen - no update needed");
-      return sendPixel();
+      console.log(`Email ${email.id} already marked as seen`);
+      return res.send(Buffer.from(TRACKING_PIXEL, 'base64'));
     }
-
-    console.log("Email found and needs to be marked as seen. ID:", email.id);
-
-    // Use the exact mutation name that's in your Allow List
-    const UPDATE_EMAIL_MUTATION = `
-      mutation UpdateEmailSeen($id: Int!) {
-        update_emails_by_pk(
-          pk_columns: {id: $id},
-          _set: {
-            seen: true,
-            seen_at: "now()"
-          }
-        ) {
-          id
-          seen
-          seen_at
-        }
-      }
-    `;
-
-    // Update the email status
-    console.log("Executing UpdateEmailSeen mutation for email ID:", email.id);
-    const updateResult = await nhost.graphql.request(
-      UPDATE_EMAIL_MUTATION,
-      { id: parseInt(email.id, 10) }
-    );
-
-    if (updateResult.error) {
-      console.error("Update error:", updateResult.error);
-    } else {
-      console.log("Successfully updated email tracking status:", updateResult.data);
-    }
-
-    // Always return the pixel, even if the update fails
-    return sendPixel();
-  } catch (error) {
-    console.error("Unhandled error:", error);
     
-    // Return the pixel even if there's an error
-    res.setHeader('Content-Type', 'image/gif');
-    res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
-    res.setHeader('Pragma', 'no-cache');
-    res.setHeader('Expires', '0');
-    res.send(Buffer.from('R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7', 'base64'));
+    // Update the email as seen
+    console.log(`Updating email ${email.id} as seen`);
+    const updateResponse = await fetch(HASURA_ENDPOINT, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-hasura-admin-secret': HASURA_ADMIN_SECRET
+      },
+      body: JSON.stringify({
+        query: `
+          mutation UpdateEmailSeen($id: Int!) {
+            update_emails_by_pk(
+              pk_columns: {id: $id}, 
+              _set: {
+                seen: true, 
+                seen_at: "now()"
+              }
+            ) {
+              id
+              seen
+              seen_at
+            }
+          }
+        `,
+        variables: {
+          id: email.id
+        }
+      })
+    });
+    
+    const updateResult = await updateResponse.json();
+    console.log('Update result:', JSON.stringify(updateResult));
+    
+    if (updateResult.errors) {
+      console.error('Update error:', updateResult.errors);
+    } else {
+      console.log(`Successfully updated email ${email.id} as seen`);
+    }
+    
+    // Return the tracking pixel
+    return res.send(Buffer.from(TRACKING_PIXEL, 'base64'));
+  } catch (error) {
+    console.error('Error in tracking pixel function:', error);
+    return res.send(Buffer.from(TRACKING_PIXEL, 'base64'));
   }
 };
