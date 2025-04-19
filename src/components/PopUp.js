@@ -15,6 +15,11 @@ import styles from "../styles/components/Popup.module.css";
 import { useState, useEffect, useRef } from "react";
 import { gql, useMutation } from "@apollo/client";
 
+// Get backend URL from environment variable
+const backendUrl = process.env.REACT_APP_NHOST_SUBDOMAIN && process.env.REACT_APP_NHOST_REGION 
+  ? `https://${process.env.REACT_APP_NHOST_SUBDOMAIN}.${process.env.REACT_APP_NHOST_REGION}.nhost.run` 
+  : process.env.NEXT_PUBLIC_BACKEND_URL;
+
 const ADD_EMAIL = gql`
   mutation addEmail(
     $email: String!
@@ -74,7 +79,7 @@ const PopUp = ({ setPopUp }) => {
   useEffect(() => {
     const time = new Date().getTime();
     setImgText(
-      `https://ttgygockyojigiwmkjsl.nhost.run/v1/functions/update?text=${time}`
+      `${backendUrl}/v1/functions/update?text=${time}`
     );
   }, []);
 
