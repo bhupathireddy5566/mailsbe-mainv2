@@ -8,7 +8,10 @@ import { useEffect, useState } from "react";
 
 const GET_EMAILS = gql`
   query getEmails($user_id: String) {
-    emails(order_by: { created_at: desc }, where: { user_id: { _eq: $user_id } }) {
+    emails(
+      order_by: { created_at: desc }
+      where: { user_id: { _eq: $user_id } }
+    ) {
       created_at
       description
       email
@@ -21,7 +24,7 @@ const GET_EMAILS = gql`
 `;
 
 const DELETE_EMAIL = gql`
-  mutation deleteEmail($id: Int) {
+  mutation deleteEmail($id: Int!) {
     delete_emails(where: { id: { _eq: $id } }) {
       affected_rows
     }
@@ -32,52 +35,49 @@ const EmailsTable = ({ styles }) => {
   const user = useUserData();
   const [emails, setEmails] = useState([]);
 
-  const [getEmails, { loading, data }] = useLazyQuery(GET_EMAILS, {
-    variables: { user_id: user.id },
+  // Use useLazyQuery with proper error handling
+  const [getEmails, { loading, data, error }] = useLazyQuery(GET_EMAILS, {
+    variables: { user_id: user?.id || "" },
+    onCompleted: (data) => {
+      if (data?.emails) setEmails(data.emails);
+    },
+    onError: (error) => {
+      toast.error("Failed to fetch emails");
+      console.error(error);
+    },
   });
 
-  const [deleteTodo] = useMutation(DELETE_EMAIL);
-
-  const fetchEmails = async () => {
-    try {
-      await getEmails({
-        variables: { user_id: user.id },
-      });
-
-      // toast.success("Emails fetched successfully");
-      setEmails(data.emails);
-    } catch (err) {
-      console.log(err);
+  // UseMutation with refetchQueries to update cache
+  const [deleteEmailMutation, { loading: deleteLoading }] = useMutation(
+    DELETE_EMAIL,
+    {
+      refetchQueries: [{ query: GET_EMAILS, variables: { user_id: user?.id } }],
     }
-  };
+  );
 
+  // Fetch emails when user is available
   useEffect(() => {
-    fetchEmails();
-  }, [data, user, fetchEmails]);
-
-  const deleteEmail = async (id) => {
-    const confirmation = window.confirm(
-      "Are you sure you want to delete this?"
-    );
-    if (!confirmation) {
-      return;
+    if (user?.id) {
+      getEmails();
     }
+  }, [user?.id]);
 
+  // Delete handler
+  const handleDelete = async (id) => {
     try {
-      await deleteTodo({
-        variables: {
-          id: id,
-        },
-      });
+      const confirmed = window.confirm("Are you sure you want to delete this?");
+      if (!confirmed) return;
 
+      await deleteEmailMutation({ variables: { id } });
       toast.success("Email deleted successfully");
-      window.location.reload();
-    } catch (err) {
-      toast.error("Unable to delete email");
+    } catch (error) {
+      toast.error("Failed to delete email");
+      console.error(error);
     }
   };
 
-  if (loading) {
+  // Loading state
+  if (loading || !user?.id) {
     return (
       <div className={styles.loader}>
         <CircularProgress />
@@ -85,12 +85,19 @@ const EmailsTable = ({ styles }) => {
     );
   }
 
-  if (emails.length === 0) {
+  // Error state
+  if (error) {
+    return <div className={styles.loader}>Error loading emails</div>;
+  }
+
+  // Empty state
+  if (!emails || emails.length === 0) {
     return <div className={styles.loader}>No emails found</div>;
   }
 
   return (
     <div className={styles.contentDiv1}>
+      {/* Email Column */}
       <div className={styles.columnDiv}>
         <div className={styles.tableHeaderCell}>
           <div className={styles.tableHeaderDiv}>
@@ -103,6 +110,8 @@ const EmailsTable = ({ styles }) => {
           </div>
         ))}
       </div>
+
+      {/* Status Column */}
       <div className={styles.columnDiv1}>
         <div className={styles.tableHeaderCell1}>
           <div className={styles.tableHeaderDiv1}>
@@ -114,13 +123,15 @@ const EmailsTable = ({ styles }) => {
             <div className={styles.badgeDiv}>
               <div className={styles.badgeBaseDiv}>
                 <div className={seen ? styles.textDiv : styles.textDiv1}>
-                  {seen ? `Seen` : `Unseen`}
+                  {seen ? "Seen" : "Unseen"}
                 </div>
               </div>
             </div>
           </div>
         ))}
       </div>
+
+      {/* Description Column */}
       <div className={styles.columnDiv2}>
         <div className={styles.tableHeaderCell}>
           <div className={styles.tableHeaderDiv1}>
@@ -133,13 +144,14 @@ const EmailsTable = ({ styles }) => {
           </div>
         ))}
       </div>
+
+      {/* Date Sent Column */}
       <div className={styles.columnDiv3}>
         <div className={styles.tableHeaderCell}>
           <div className={styles.tableHeaderDiv1}>
             <div className={styles.textDiv1}>Date sent</div>
           </div>
         </div>
-
         {emails.map(({ created_at, id }) => (
           <div className={styles.tableCellDiv} key={id}>
             <div className={styles.dateDiv}>
@@ -148,6 +160,8 @@ const EmailsTable = ({ styles }) => {
           </div>
         ))}
       </div>
+
+      {/* Date Seen Column */}
       <div className={styles.columnDiv3}>
         <div className={styles.tableHeaderCell}>
           <div className={styles.tableHeaderDiv1}>
@@ -162,11 +176,16 @@ const EmailsTable = ({ styles }) => {
           </div>
         ))}
       </div>
+
+      {/* Delete Button Column */}
       <div className={styles.dropdownDiv}>
         <div className={styles.tableHeaderCell8} />
         {emails.map(({ id }) => (
           <div className={styles.tableCellButton} key={id}>
-            <IconButton onClick={() => deleteEmail(id)}>
+            <IconButton
+              onClick={() => handleDelete(id)}
+              disabled={deleteLoading}
+            >
               <Delete />
             </IconButton>
           </div>
