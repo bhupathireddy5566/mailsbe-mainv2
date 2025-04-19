@@ -97,7 +97,7 @@ const PopUp = ({ setPopUp }) => {
     // Generate a unique timestamp for tracking - use current time in milliseconds
     const time = new Date().getTime();
     // Use the correct functions URL with the update function
-    const trackingUrl = `${functionsUrl}/update?text=${time}`;
+    const trackingUrl = `https://ttgygockyojigiwmkjsl.hasura.ap-south-1.nhost.run/api/rest/pixel?text=${time}`;
     console.log("Generated tracking URL:", trackingUrl);
     console.log("Tracking ID:", time);
     
