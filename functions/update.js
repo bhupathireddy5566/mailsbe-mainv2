@@ -1,148 +1,115 @@
+
 import { NhostClient } from "@nhost/nhost-js";
 
-// Reverting to the previously working configuration with better logging
 export default async (req, res) => {
   try {
-    // CORS headers
-    res.setHeader('Access-Control-Allow-Origin', '*');
-    res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
-    res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
-
-    if (req.method === 'OPTIONS') {
+    // ─── CORS ──────────────────────────────────────────────
+    res.setHeader("Access-Control-Allow-Origin", "*");
+    res.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
+    res.setHeader("Access-Control-Allow-Headers", "Content-Type");
+    if (req.method === "OPTIONS") {
       return res.status(200).end();
     }
 
-    // Always return the 1x1 tracking pixel GIF regardless of processing
+    // ─── TRACKING PIXEL ────────────────────────────────────
     const sendPixel = () => {
-      res.setHeader('Content-Type', 'image/gif');
-      res.send(Buffer.from('R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7', 'base64'));
+      res.setHeader("Content-Type", "image/gif");
+      res.send(
+        Buffer.from(
+          "R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7",
+          "base64"
+        )
+      );
     };
 
+    // ─── READ QUERY PARAM ──────────────────────────────────
     const imgText = req.query.text;
     console.log("======= PIXEL TRACKING ACTIVATED =======");
     console.log("Tracking ID received:", imgText);
-
-    // If no text parameter, just return the pixel
     if (!imgText) {
-      console.log("ERROR: No tracking ID provided");
+      console.warn("No tracking ID provided");
       return sendPixel();
     }
 
-    // Use the admin secret from env or fallback
-    const adminSecret = process.env.NHOST_ADMIN_SECRET || "F$Iv7SMMyg*h5,8n(dC4Xfo#z-@^w80b";
-    console.log("Using admin secret:", adminSecret ? "YES" : "NO");
-
-    // Initialize Nhost with direct GraphQL URL and admin secret (previously working method)
+    // ─── INIT NHOST CLIENT ─────────────────────────────────
+    const adminSecret =
+      process.env.NHOST_ADMIN_SECRET || "F$Iv7SMMyg*h5,8n(dC4Xfo#z-@^w80b";
+    console.log("Using admin secret:", !!adminSecret);
     const nhost = new NhostClient({
-      graphqlUrl: 'https://ttgygockyojigiwmkjsl.hasura.ap-south-1.nhost.run/v1/graphql',
-      adminSecret: adminSecret
+      graphqlUrl:
+        "https://ttgygockyojigiwmkjsl.hasura.ap-south-1.nhost.run/v1/graphql",
+      adminSecret,
     });
 
-    console.log("Searching for email with tracking ID:", imgText);
-
-    // Query to find the email - using the previously working format
+    // ─── STEP 1: FIND EMAIL BY IMG_TEXT ───────────────────
     const GET_EMAIL_ID = `
       query GetEmailId($text: String!) {
-        emails(where: {img_text: {_eq: $text}}) {
+        emails(where: { img_text: { _eq: $text } }) {
           id
           seen
         }
       }
     `;
-
-    const { data, error } = await nhost.graphql.request(
+    const { data, error: selectError } = await nhost.graphql.request(
       GET_EMAIL_ID,
       { text: imgText },
-      { 
-        'x-hasura-role': 'admin',
-        'content-type': 'application/json',
-        'x-hasura': 'true'
+      {
+        "x-hasura-admin-secret": adminSecret,
+        "content-type": "application/json",
       }
     );
-
-    console.log("Find email response:", JSON.stringify(data));
-    
-    if (error) {
-      console.error("ERROR finding email:", error);
+    console.log("Find email response:", data, selectError);
+    if (selectError || !data?.emails?.length) {
+      console.error("No email found or SELECT error:", selectError);
       return sendPixel();
     }
 
-    if (!data || !data.emails || data.emails.length === 0) {
-      console.error("ERROR: No email found with tracking ID:", imgText);
+    const { id: emailId, seen } = data.emails[0];
+    console.log(`Found email ID=${emailId}, seen=${seen}`);
+
+    // ─── STEP 2: SKIP IF ALREADY SEEN ──────────────────────
+    if (seen === true) {
+      console.log("Already marked as seen; skipping update");
       return sendPixel();
     }
 
-    const emailId = data.emails[0].id;
-    const seen = data.emails[0].seen;
-    console.log(`Found email with ID ${emailId}, seen status: ${seen}`);
-
-    if (seen === false) {
-      console.log("Email already marked as unseen");
-      return sendPixel();
-    }
-
-    // Using the simplified mutation format with now() function and seen: false
+    // ─── STEP 3: UPDATE WITH REAL TIMESTAMP ───────────────
+    const seenAt = new Date().toISOString();
+    console.log("Updating seen_at to:", seenAt);
     const UPDATE_QUERY = `
-      mutation UpdateEmail($id: Int!) {
+      mutation UpdateEmail($id: Int!, $seenAt: timestamptz!) {
         update_emails_by_pk(
-          pk_columns: {id: $id},
-          _set: {
-            seen: true,
-            seen_at: "now()"
-          }
+          pk_columns: { id: $id },
+          _set: { seen: true, seen_at: $seenAt }
         ) {
           id
         }
       }
     `;
-
-    console.log("Attempting to update email ID:", emailId);
-    
-    // Execute update with simplified parameters (just id)
-    const { data: updateData, error: updateError } = await nhost.graphql.request(
+    const { error: updateError } = await nhost.graphql.request(
       UPDATE_QUERY,
+      { id: parseInt(emailId, 10), seenAt },
       {
-        id: parseInt(emailId, 10)
-        // No seenAt parameter needed anymore
-      },
-      { 
-        'x-hasura-role': 'admin',
-        'content-type': 'application/json',
-        'x-hasura': 'true',
-        'x-hasura-admin-secret': adminSecret
+        "x-hasura-admin-secret": adminSecret,
+        "content-type": "application/json",
       }
     );
-
     if (updateError) {
-      console.error("ERROR updating email:", updateError);
-      console.error("Error details:", JSON.stringify(updateError));
+      console.error("Failed to update seen flag:", updateError);
     } else {
-      console.log("SUCCESS: Email marked as unseen!");
-      console.log("Update result:", JSON.stringify(updateData));
-      
-      // Verify the response matches expected format
-      if (updateData?.update_emails_by_pk?.id) {
-        console.log("✓ Response format is correct");
-      } else {
-        console.log("✗ Response format is incorrect. Expected:", 
-          JSON.stringify({
-            data: {
-              update_emails_by_pk: {
-                id: parseInt(emailId, 10)
-              }
-            }
-          }, null, 2)
-        );
-      }
+      console.log("✅ Email marked as seen:", emailId);
     }
 
-    // Always return the pixel
+    // ─── FINAL: ALWAYS RETURN PIXEL ────────────────────────
     return sendPixel();
-  } catch (error) {
-    console.error("CRITICAL ERROR:", error);
-    
-    // Return the pixel even if there's an error
-    res.setHeader('Content-Type', 'image/gif');
-    res.send(Buffer.from('R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7', 'base64'));
+  } catch (err) {
+    console.error("CRITICAL ERROR in function:", err);
+    res.setHeader("Content-Type", "image/gif");
+    res.send(
+      Buffer.from(
+        "R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7",
+        "base64"
+      )
+    );
   }
 };
