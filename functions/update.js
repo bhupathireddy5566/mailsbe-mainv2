@@ -33,19 +33,30 @@ export default async (req, res) => {
     }
     console.log(`ℹ️ Tracking ID received: ${imgText}`);
 
-    // ─── 4) CORRECT NHOST CLIENT INITIALIZATION ───────────────
-    // Required parameters according to error logs
-    const backendUrl = "https://ttgygockyojigiwmkjsl.nhost.run";
+    // ─── 4) DIRECT API ENDPOINT AND CREDENTIALS ───────────────
+    const graphqlUrl = "https://ttgygockyojigiwmkjsl.hasura.ap-south-1.nhost.run/v1/graphql";
     const adminSecret = "F$Iv7SMMyg*h5,8n(dC4Xfo#z-@^w80b";
 
-    console.log(`📡 Using backendUrl: ${backendUrl}`);
+    console.log(`📡 Using GraphQL URL: ${graphqlUrl}`);
     
-    // ─── 5) INIT NHOST CLIENT CORRECTLY ───────────────────────
-    const nhost = new NhostClient({
-      backendUrl: backendUrl,
-      adminSecret: adminSecret
-    });
-    console.log("✅ Nhost Client Initialized with proper backendUrl");
+    // ─── 5) USE DIRECT FETCH API - NO NHOST CLIENT ────────────
+    const makeGraphQLRequest = async (query, variables) => {
+      console.log(`🔄 GraphQL Request: ${query.substring(0, 50)}... with variables:`, variables);
+      
+      const response = await fetch(graphqlUrl, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-hasura-admin-secret': adminSecret
+        },
+        body: JSON.stringify({ query, variables })
+      });
+      
+      const result = await response.json();
+      console.log(`📥 GraphQL Response:`, JSON.stringify(result));
+      
+      return result;
+    };
 
     // ─── 6) FIND EMAIL BY IMG_TEXT ──────────────────────────
     const GET_EMAIL_ID = `
@@ -58,30 +69,19 @@ export default async (req, res) => {
     `;
     
     console.log(`🔍 Searching for email with img_text: ${imgText}`);
-    const { data: selectData, error: selectError } = await nhost.graphql.request(
-      GET_EMAIL_ID,
-      { text: imgText },
-      {
-        headers: {
-          "content-type": "application/json",
-          "x-hasura-admin-secret": adminSecret
-        }
-      }
-    );
-
-    console.log("SELECT RESPONSE:", selectData, selectError);
+    const selectResult = await makeGraphQLRequest(GET_EMAIL_ID, { text: imgText });
     
-    if (selectError) {
-      console.error(`❌ SELECT Error: ${JSON.stringify(selectError)}`);
+    if (selectResult.errors) {
+      console.error(`❌ SELECT Error: ${JSON.stringify(selectResult.errors)}`);
       return sendPixel();
     }
 
-    if (!selectData?.emails?.length) {
+    if (!selectResult.data?.emails?.length) {
       console.warn(`⚠️ No email found matching img_text: ${imgText}`);
       return sendPixel();
     }
 
-    const { id: emailId, seen } = selectData.emails[0];
+    const { id: emailId, seen } = selectResult.data.emails[0];
     console.log(`✅ Found email ID=${emailId}, current seen status: ${seen}`);
 
     // ─── 7) SKIP IF ALREADY SEEN ───────────────────────────
@@ -94,7 +94,7 @@ export default async (req, res) => {
     const seenAt = new Date().toISOString();
     console.log(`🔄 Updating email ID=${emailId} with seen=true, seen_at=${seenAt}`);
     
-    // EXACT mutation from API Explorer screenshot
+    // EXACT mutation from API Explorer screenshot, simple format to match Explorer
     const UPDATE_QUERY = `
       mutation UpdateEmail($id: Int!, $seenAt: timestamptz!) {
         update_emails_by_pk(
@@ -106,26 +106,18 @@ export default async (req, res) => {
       }
     `;
 
-    const { data: updateData, error: updateError } = await nhost.graphql.request(
-      UPDATE_QUERY,
-      { id: parseInt(emailId, 10), seenAt: seenAt },
-      {
-        headers: {
-          "content-type": "application/json",
-          "x-hasura-admin-secret": adminSecret
-        }
-      }
-    );
-
-    console.log("UPDATE RESPONSE:", updateData, updateError);
+    const updateResult = await makeGraphQLRequest(UPDATE_QUERY, { 
+      id: parseInt(emailId, 10), 
+      seenAt: seenAt 
+    });
     
-    if (updateError) {
-      console.error(`❌ UPDATE Error: ${JSON.stringify(updateError)}`);
-    } else if (updateData?.update_emails_by_pk) {
+    if (updateResult.errors) {
+      console.error(`❌ UPDATE Error: ${JSON.stringify(updateResult.errors)}`);
+    } else if (updateResult.data?.update_emails_by_pk) {
       console.log(`✅ SUCCESS: Email ID=${emailId} marked as seen!`);
-      console.log("UPDATED DATA:", JSON.stringify(updateData.update_emails_by_pk));
+      console.log("UPDATED DATA:", JSON.stringify(updateResult.data.update_emails_by_pk));
     } else {
-      console.warn(`⚠️ No errors but unexpected response format`);
+      console.warn(`⚠️ No errors but unexpected response format:`, JSON.stringify(updateResult));
     }
 
     // ─── 9) ALWAYS RETURN PIXEL ──────────────────────────────
