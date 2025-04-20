@@ -1,13 +1,12 @@
-// Directly use Node.js modules instead of external libraries
-const https = require('https');
+// Use axios for HTTP requests - more reliable than raw https
+const axios = require('axios');
 
 export default async (req, res) => {
   console.log("📢 TRACKING PIXEL REQUEST RECEIVED", {
     timestamp: new Date().toISOString(),
     method: req.method,
     url: req.url,
-    query: req.query,
-    headers: req.headers
+    query: req.query
   });
 
   // ─── 1) CORS HEADERS ───────────────────────────────────────
@@ -35,73 +34,45 @@ export default async (req, res) => {
     }
     console.log(`✅ Tracking ID (text param): ${imgText}`);
 
-    // ─── 4) MAKE DIRECT HTTP REQUEST TO HASURA ─────────────
-    // Use direct HTTPS API without any external library
-    const directGraphQLRequest = (query, variables) => {
-      return new Promise((resolve, reject) => {
-        // Hasura endpoint
-        const graphqlEndpoint = 'ttgygockyojigiwmkjsl.hasura.ap-south-1.nhost.run';
-        const graphqlPath = '/v1/graphql';
-        
-        // Admin secret from the API Explorer
-        const adminSecret = "F$Iv7SMMyg*h5,8n(dC4Xfo#z-@^w80b";
-        
-        // Request body
-        const requestBody = JSON.stringify({
-          query: query,
-          variables: variables
-        });
-        
-        console.log(`📤 GraphQL Request: ${query.substring(0, 80)}...`);
-        console.log(`📤 Variables: ${JSON.stringify(variables)}`);
-        
-        // Request options
-        const options = {
-          hostname: graphqlEndpoint,
-          path: graphqlPath,
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'x-hasura-admin-secret': adminSecret,
-            'Content-Length': Buffer.byteLength(requestBody)
-          }
-        };
-        
-        // Create request
-        const request = https.request(options, (response) => {
-          let data = '';
-          
-          // A chunk of data has been received
-          response.on('data', (chunk) => {
-            data += chunk;
-          });
-          
-          // The whole response has been received
-          response.on('end', () => {
-            console.log(`📥 GraphQL Response Status: ${response.statusCode}`);
-            try {
-              const parsedData = JSON.parse(data);
-              console.log(`📥 GraphQL Response Body: ${JSON.stringify(parsedData)}`);
-              resolve(parsedData);
-            } catch (e) {
-              console.error(`❌ Error parsing response: ${e.message}`);
-              console.log(`Raw response: ${data}`);
-              reject(e);
-            }
-          });
-        });
-        
-        // Handle errors
-        request.on('error', (error) => {
-          console.error(`❌ Request Error: ${error.message}`);
-          reject(error);
-        });
-        
-        // Write request body and end
-        request.write(requestBody);
-        request.end();
-      });
+    // ─── 4) SETUP DIRECT AXIOS REQUEST ─────────────────────
+    // The Hasura endpoint from the API Explorer screenshot
+    const GRAPHQL_URL = 'https://ttgygockyojigiwmkjsl.hasura.ap-south-1.nhost.run/v1/graphql';
+    const ADMIN_SECRET = "F$Iv7SMMyg*h5,8n(dC4Xfo#z-@^w80b";
+    
+    const headers = {
+      'Content-Type': 'application/json',
+      'x-hasura-admin-secret': ADMIN_SECRET
     };
+    
+    // Helper function to make GraphQL requests
+    async function executeGraphQL(query, variables) {
+      try {
+        console.log(`🔄 Executing GraphQL: ${query.substring(0, 80)}...`);
+        console.log(`🔄 Variables: ${JSON.stringify(variables)}`);
+        
+        const response = await axios({
+          url: GRAPHQL_URL,
+          method: 'POST',
+          headers: headers,
+          data: {
+            query: query,
+            variables: variables
+          }
+        });
+        
+        console.log(`✅ GraphQL response status: ${response.status}`);
+        console.log(`✅ GraphQL response data: ${JSON.stringify(response.data)}`);
+        
+        return response.data;
+      } catch (error) {
+        console.error("❌ GraphQL request failed:", error.message);
+        if (error.response) {
+          console.error(`Status: ${error.response.status}`);
+          console.error(`Data: ${JSON.stringify(error.response.data)}`);
+        }
+        throw error;
+      }
+    }
 
     // ─── 5) QUERY EMAIL BY IMG_TEXT ─────────────────────────
     const GET_EMAIL_QUERY = `
@@ -115,13 +86,7 @@ export default async (req, res) => {
     `;
     
     console.log(`🔍 Finding email with img_text = "${imgText}"`);
-    const queryResult = await directGraphQLRequest(GET_EMAIL_QUERY, { text: imgText });
-    
-    // Check for GraphQL errors
-    if (queryResult.errors) {
-      console.error(`❌ GraphQL Query Error:`, queryResult.errors);
-      return sendPixel();
-    }
+    const queryResult = await executeGraphQL(GET_EMAIL_QUERY, { text: imgText });
     
     // Check if email exists
     if (!queryResult.data || !queryResult.data.emails || queryResult.data.emails.length === 0) {
@@ -131,7 +96,7 @@ export default async (req, res) => {
     
     // Extract email info
     const email = queryResult.data.emails[0];
-    console.log(`✅ Found email ID=${email.id}, current seen status=${email.seen}`);
+    console.log(`📧 Found email ID=${email.id}, current seen status=${email.seen}`);
     
     // ─── 6) SKIP IF ALREADY SEEN ───────────────────────────
     if (email.seen === true) {
@@ -141,9 +106,9 @@ export default async (req, res) => {
     
     // ─── 7) UPDATE EMAIL AS SEEN ────────────────────────────
     const seenAt = new Date().toISOString();
-    console.log(`🔄 Updating email ID=${email.id} to seen=true, seen_at=${seenAt}`);
+    console.log(`📝 Updating email ID=${email.id} to seen=true, seen_at=${seenAt}`);
     
-    // Use simple mutation format exactly like API Explorer
+    // Use simple mutation format from API Explorer
     const UPDATE_MUTATION = `
       mutation UpdateEmail($id: Int!, $seenAt: timestamptz!) {
         update_emails_by_pk(
@@ -157,19 +122,16 @@ export default async (req, res) => {
       }
     `;
     
-    const mutationResult = await directGraphQLRequest(UPDATE_MUTATION, {
+    const mutationResult = await executeGraphQL(UPDATE_MUTATION, {
       id: parseInt(email.id, 10),
       seenAt: seenAt
     });
     
-    // Check for GraphQL errors
-    if (mutationResult.errors) {
-      console.error(`❌ GraphQL Mutation Error:`, mutationResult.errors);
-    } else if (mutationResult.data && mutationResult.data.update_emails_by_pk) {
+    if (mutationResult.data && mutationResult.data.update_emails_by_pk) {
       console.log(`✅ SUCCESSFULLY updated email ID=${email.id}`);
-      console.log(`   Updated values: seen=${mutationResult.data.update_emails_by_pk.seen}, seen_at=${mutationResult.data.update_emails_by_pk.seen_at}`);
+      console.log(`✅ New values: seen=${mutationResult.data.update_emails_by_pk.seen}, seen_at=${mutationResult.data.update_emails_by_pk.seen_at}`);
     } else {
-      console.warn(`⚠️ Unexpected mutation response format:`, mutationResult);
+      console.warn(`⚠️ Unexpected mutation response:`, JSON.stringify(mutationResult));
     }
     
     // ─── 8) ALWAYS RETURN PIXEL ──────────────────────────────
