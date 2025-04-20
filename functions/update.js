@@ -1,8 +1,9 @@
 // Use axios for HTTP requests - more reliable than raw https
+// VERSION: 2.0 - PURE AXIOS IMPLEMENTATION
 const axios = require('axios');
 
 export default async (req, res) => {
-  console.log("📢 TRACKING PIXEL REQUEST RECEIVED", {
+  console.log("📢 TRACKING PIXEL V2.0 - REQUEST RECEIVED", {
     timestamp: new Date().toISOString(),
     method: req.method,
     url: req.url,
@@ -26,6 +27,11 @@ export default async (req, res) => {
   };
 
   try {
+    // Verify no NhostClient is present
+    if (typeof NhostClient !== 'undefined') {
+      console.error("❌ ERROR: NhostClient should not be defined");
+    }
+
     // ─── 3) VALIDATE QUERY PARAM ────────────────────────────
     const imgText = req.query.text;
     if (!imgText) {
