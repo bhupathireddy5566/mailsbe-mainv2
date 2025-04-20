@@ -1,6 +1,6 @@
 import { NhostClient } from "@nhost/nhost-js";
 
-// Simplified function with better error handling
+// Simplified function with better error handling and detailed logging
 export default async (req, res) => {
   try {
     // CORS headers
@@ -20,23 +20,34 @@ export default async (req, res) => {
     };
 
     const imgText = req.query.text;
-    console.log("Processing tracking pixel for:", imgText);
+    console.log("======= PIXEL TRACKING ACTIVATED =======");
+    console.log("Tracking ID received:", imgText);
+    console.log("Request URL:", req.url);
+    console.log("Request method:", req.method);
+    console.log("Request headers:", JSON.stringify(req.headers));
 
     // If no text parameter, just return the pixel
     if (!imgText) {
-      console.log("No tracking ID provided");
+      console.log("ERROR: No tracking ID provided in query parameters");
       return sendPixel();
     }
 
-    // Initialize Nhost client - use environment variables or fallback values
+    // Hard-coded admin secret as backup - replace with your actual admin secret
+    const adminSecret = process.env.NHOST_ADMIN_SECRET || "F$Iv7SMMyg*h5,8n(dC4Xfo#z-@^w80b";
+    console.log("Using admin secret:", adminSecret ? "YES (available)" : "NO (missing)");
+
+    // Initialize Nhost client with explicit values
     const nhost = new NhostClient({
-      subdomain: process.env.REACT_APP_NHOST_SUBDOMAIN || "ttgygockyojigiwmkjsl",
-      region: process.env.REACT_APP_NHOST_REGION || "ap-south-1",
-      adminSecret: process.env.NHOST_ADMIN_SECRET
+      subdomain: "ttgygockyojigiwmkjsl",
+      region: "ap-south-1",
+      adminSecret: adminSecret
     });
 
-    // Simple query to find the email
-    const { data, error } = await nhost.graphql.request(
+    console.log("Initialized Nhost client");
+    console.log("Searching for email with tracking ID:", imgText);
+
+    // Simple query to find the email - with detailed logging
+    const findEmailResponse = await nhost.graphql.request(
       `query GetEmail($text: String!) {
         emails(where: {img_text: {_eq: $text}}) {
           id
@@ -45,13 +56,24 @@ export default async (req, res) => {
       }`,
       { text: imgText }
     );
-
-    if (error || !data?.emails?.length) {
-      console.log("Query error or no emails found:", error || "No matching emails");
+    
+    console.log("Find email response:", JSON.stringify(findEmailResponse));
+    
+    if (findEmailResponse.error) {
+      console.log("ERROR finding email:", findEmailResponse.error);
+      return sendPixel();
+    }
+    
+    const emails = findEmailResponse.data?.emails || [];
+    console.log("Emails found:", emails.length);
+    
+    if (emails.length === 0) {
+      console.log("ERROR: No email found with tracking ID:", imgText);
       return sendPixel();
     }
 
-    const email = data.emails[0];
+    const email = emails[0];
+    console.log("Found email:", JSON.stringify(email));
     
     // Skip update if already seen
     if (email.seen) {
@@ -59,9 +81,11 @@ export default async (req, res) => {
       return sendPixel();
     }
 
-    // Update the email status
-    const updateResult = await nhost.graphql.request(
-      `mutation UpdateEmail($id: Int!) {
+    console.log("Attempting to update email with ID:", email.id);
+    
+    // Prepare the update mutation
+    const UPDATE_MUTATION = `
+      mutation UpdateEmail($id: Int!) {
         update_emails_by_pk(
           pk_columns: {id: $id},
           _set: {
@@ -70,21 +94,38 @@ export default async (req, res) => {
           }
         ) {
           id
+          seen
+          seen_at
         }
-      }`,
-      { id: parseInt(email.id, 10) }
-    );
-
-    if (updateResult.error) {
-      console.log("Update error:", updateResult.error);
-    } else {
-      console.log("Successfully updated email with ID:", email.id);
+      }
+    `;
+    
+    // Try direct fetch approach as alternative
+    try {
+      console.log("Executing update mutation...");
+      const updateResponse = await nhost.graphql.request(
+        UPDATE_MUTATION,
+        { id: parseInt(email.id, 10) }
+      );
+      
+      console.log("Update response:", JSON.stringify(updateResponse));
+      
+      if (updateResponse.error) {
+        console.log("ERROR updating email:", updateResponse.error);
+      } else if (updateResponse.data?.update_emails_by_pk) {
+        console.log("SUCCESS: Email marked as seen!");
+        console.log("Updated data:", JSON.stringify(updateResponse.data.update_emails_by_pk));
+      } else {
+        console.log("WARNING: Update operation returned no errors but no confirmation data");
+      }
+    } catch (updateError) {
+      console.log("EXCEPTION during update:", updateError);
     }
 
     // Always return the pixel, even if the update fails
     return sendPixel();
   } catch (error) {
-    console.error("Unhandled error:", error);
+    console.error("CRITICAL ERROR:", error);
     
     // Return the pixel even if there's an error
     res.setHeader('Content-Type', 'image/gif');

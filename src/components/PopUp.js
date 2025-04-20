@@ -15,7 +15,7 @@ import styles from "../styles/components/Popup.module.css";
 import { useState, useEffect, useRef } from "react";
 import { gql, useMutation } from "@apollo/client";
 
-// Use the exact functions URL from the Nhost dashboard
+// Use the exact functions URL from the Nhost dashboard with explicit protocol
 const functionsUrl = 'https://ttgygockyojigiwmkjsl.functions.ap-south-1.nhost.run/v1';
 
 const ADD_EMAIL = gql`
@@ -91,13 +91,27 @@ const PopUp = ({ setPopUp }) => {
   };
 
   useEffect(() => {
-    // Generate a unique timestamp for tracking - use current time in milliseconds
-    const time = new Date().getTime();
-    // Use the correct functions URL with the update function
-    const trackingUrl = `${functionsUrl}/update?text=${time}`;
-    console.log("Generated tracking URL:", trackingUrl);
-    console.log("Tracking ID:", time);
+    // Generate a unique, simpler tracking ID - easier to track
+    const trackingId = Date.now().toString();
+    
+    // Construct the full tracking URL with the ID
+    const trackingUrl = `${functionsUrl}/update?text=${trackingId}`;
+    
+    console.log("Generated tracking pixel:");
+    console.log("- Tracking ID:", trackingId);
+    console.log("- Full URL:", trackingUrl);
+    
+    // Store the full URL
     setImgText(trackingUrl);
+    
+    // Test the tracking pixel URL to make sure it's accessible
+    fetch(trackingUrl, { method: 'HEAD' })
+      .then(response => {
+        console.log("Tracking URL test successful:", response.status);
+      })
+      .catch(error => {
+        console.error("Tracking URL test failed:", error);
+      });
   }, []);
 
   return (
@@ -156,20 +170,27 @@ const PopUp = ({ setPopUp }) => {
 
             <div className={styles.copyBox}>
               <div className={styles.imgDiv} ref={ref}>
+                {/* First part of name */}
                 {name && name.substring(0, 1)}
+                
+                {/* The actual tracking pixel - make sure it loads but stays invisible */}
                 <img
                   src={imgText}
                   className={styles.pixelImg}
-                  width={1}
-                  height={1}
+                  width="1"
+                  height="1"
                   alt="Tracking pixel"
+                  loading="eager"
+                  onLoad={() => console.log("Tracking pixel loaded successfully")}
                   onError={(e) => console.error("Failed to load tracking pixel:", e)}
                 />
+                
+                {/* Rest of name */}
                 {name && name.substring(1, name.length)}
               </div>
               <span className={styles.imgHelperText}>
-                Copy this text and paste it in the email.{" "}
-                <strong>Imp: Don't erase it after pasting.</strong>
+                <strong>Important:</strong> Copy this text and paste it in the email.{" "}
+                Do not erase any part of it after pasting.
               </span>
             </div>
 
