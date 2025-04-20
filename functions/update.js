@@ -33,32 +33,25 @@ export default async (req, res) => {
 
     // ─── 4) LOAD ADMIN SECRET ───────────────────────────────
     const adminSecret = process.env.NHOST_ADMIN_SECRET;
+    const graphqlUrl = process.env.NHOST_GRAPHQL_URL; // Use the specific GraphQL URL env var
+
     if (!adminSecret) {
       console.error("❌ CRITICAL: NHOST_ADMIN_SECRET environment variable is not set.");
-      return sendPixel(); // Still return pixel, but log critical error
+      return sendPixel();
+    }
+    if (!graphqlUrl) {
+      console.error("❌ CRITICAL: NHOST_GRAPHQL_URL environment variable is not set.");
+      return sendPixel();
     }
     console.log("✅ Admin secret loaded.");
+    console.log(`✅ GraphQL URL loaded: ${graphqlUrl}`);
 
-    // ─── 5) INIT NHOST CLIENT (Corrected) ───────────────────
-    // Use NHOST_BACKEND_URL if available, otherwise subdomain/region
-    const backendUrl = process.env.NHOST_BACKEND_URL;
-    const subdomain = process.env.NHOST_SUBDOMAIN;
-    const region = process.env.NHOST_REGION;
-
-    let nhostConfig = {};
-    if (backendUrl) {
-        nhostConfig = { backendUrl, adminSecret };
-        console.log(`🚀 Initializing Nhost Client with backendUrl: ${backendUrl}`);
-    } else if (subdomain && region) {
-        nhostConfig = { subdomain, region, adminSecret };
-        console.log(`🚀 Initializing Nhost Client with subdomain: ${subdomain}, region: ${region}`);
-    } else {
-        console.error("❌ CRITICAL: Nhost client config missing. Need NHOST_BACKEND_URL or NHOST_SUBDOMAIN/NHOST_REGION env vars.");
-        return sendPixel();
-    }
-
-    const nhost = new NhostClient(nhostConfig);
-    console.log("✅ Nhost Client Initialized.");
+    // ─── 5) INIT NHOST CLIENT (Using NHOST_GRAPHQL_URL) ───────
+    const nhost = new NhostClient({
+      graphqlUrl: graphqlUrl, // Explicitly set the GraphQL URL
+      adminSecret: adminSecret
+    });
+    console.log("✅ Nhost Client Initialized using explicit graphqlUrl.");
 
     // ─── 6) STEP 1: FIND EMAIL BY IMG_TEXT ──────────────────
     const GET_EMAIL_ID = `
