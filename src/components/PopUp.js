@@ -15,6 +15,13 @@ import styles from "../styles/components/Popup.module.css";
 import { useState, useEffect, useRef } from "react";
 import { gql, useMutation } from "@apollo/client";
 
+// Construct Functions URL from REACT_APP env vars or fallback
+const subdomain = process.env.REACT_APP_NHOST_SUBDOMAIN || "ttgygockyojigiwmkjsl";
+const region = process.env.REACT_APP_NHOST_REGION || "ap-south-1";
+const functionsUrl = process.env.REACT_APP_FUNCTIONS_URL || `https://${subdomain}.functions.${region}.nhost.run/v1`;
+
+console.log(`Using Functions URL: ${functionsUrl}`);
+
 const ADD_EMAIL = gql`
   mutation addEmail(
     $email: String!
