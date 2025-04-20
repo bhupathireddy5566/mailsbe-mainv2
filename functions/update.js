@@ -76,39 +76,34 @@ export default async (req, res) => {
     const seen = data.emails[0].seen;
     console.log(`Found email with ID ${emailId}, seen status: ${seen}`);
 
-    if (seen) {
-      console.log("Email already marked as seen");
+    if (seen === false) {
+      console.log("Email already marked as unseen");
       return sendPixel();
     }
 
-    // Using the exact mutation format provided by the user
+    // Using the simplified mutation format with now() function and seen: false
     const UPDATE_QUERY = `
-      mutation UpdateEmail($id: Int!, $seenAt: timestamptz!) {
+      mutation UpdateEmail($id: Int!) {
         update_emails_by_pk(
           pk_columns: {id: $id},
           _set: {
             seen: true,
-            seen_at: $seenAt
+            seen_at: "now()"
           }
         ) {
           id
-          seen
-          seen_at
         }
       }
     `;
 
     console.log("Attempting to update email ID:", emailId);
     
-    // Execute update with the correct variable names format
-    const currentTime = new Date().toISOString();
-    console.log("Current timestamp:", currentTime);
-
+    // Execute update with simplified parameters (just id)
     const { data: updateData, error: updateError } = await nhost.graphql.request(
       UPDATE_QUERY,
       {
-        id: parseInt(emailId, 10),
-        seenAt: currentTime
+        id: parseInt(emailId, 10)
+        // No seenAt parameter needed anymore
       },
       { 
         'x-hasura-role': 'admin',
@@ -121,20 +116,18 @@ export default async (req, res) => {
       console.error("ERROR updating email:", updateError);
       console.error("Error details:", JSON.stringify(updateError));
     } else {
-      console.log("SUCCESS: Email marked as seen!");
+      console.log("SUCCESS: Email marked as unseen!");
       console.log("Update result:", JSON.stringify(updateData));
       
       // Verify the response matches expected format
-      if (updateData?.update_emails_by_pk) {
+      if (updateData?.update_emails_by_pk?.id) {
         console.log("✓ Response format is correct");
       } else {
         console.log("✗ Response format is incorrect. Expected:", 
           JSON.stringify({
             data: {
               update_emails_by_pk: {
-                id: parseInt(emailId, 10),
-                seen: true,
-                seen_at: currentTime
+                id: parseInt(emailId, 10)
               }
             }
           }, null, 2)
