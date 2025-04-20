@@ -34,21 +34,28 @@ export default async (req, res) => {
     console.log(`ℹ️ Tracking ID received: ${imgText}`);
 
     // ─── 4) HARD-CODED VALUES FROM SCREENSHOTS ───────────────
-    // Use the exact GraphQL URL from the API Explorer screenshot
-    const graphqlUrl = "https://ttgygockyojigiwmkjsl.hasura.ap-south-1.nhost.run/v1/graphql";
+    // Use the exact GraphQL RELAY URL from the API Explorer screenshot
+    const graphqlUrl = "https://ttgygockyojigiwmkjsl.hasura.ap-south-1.nhost.run/v1beta1/relay";
     // Use admin secret from your API Explorer
     const adminSecret = "F$Iv7SMMyg*h5,8n(dC4Xfo#z-@^w80b";
 
-    console.log(`📡 Using GraphQL URL: ${graphqlUrl}`);
+    console.log(`📡 Using GraphQL RELAY URL: ${graphqlUrl}`);
     
     // ─── 5) INIT NHOST CLIENT WITH EXACT VALUES ───────────────
     const nhost = new NhostClient({
       graphqlUrl: graphqlUrl,
       adminSecret: adminSecret
     });
-    console.log("✅ Nhost Client Initialized with exact hardcoded values");
+    console.log("✅ Nhost Client Initialized with relay endpoint");
 
     // ─── 6) FIND EMAIL BY IMG_TEXT ──────────────────────────
+    // First use the regular GraphQL endpoint for the SELECT operation
+    const regularGraphqlUrl = "https://ttgygockyojigiwmkjsl.hasura.ap-south-1.nhost.run/v1/graphql";
+    const nhostRegular = new NhostClient({
+      graphqlUrl: regularGraphqlUrl,
+      adminSecret: adminSecret
+    });
+    
     const GET_EMAIL_ID = `
       query GetEmailId($text: String!) {
         emails(where: { img_text: { _eq: $text } }, limit: 1) {
@@ -59,7 +66,7 @@ export default async (req, res) => {
     `;
     
     console.log(`🔍 Searching for email with img_text: ${imgText}`);
-    const { data: selectData, error: selectError } = await nhost.graphql.request(
+    const { data: selectData, error: selectError } = await nhostRegular.graphql.request(
       GET_EMAIL_ID,
       { text: imgText },
       {
@@ -93,7 +100,7 @@ export default async (req, res) => {
 
     // ─── 8) USE EXACT MUTATION FROM API EXPLORER ───────────
     const seenAt = new Date().toISOString();
-    console.log(`🔄 Updating email ID=${emailId} to seen=true, seen_at=${seenAt}`);
+    console.log(`🔄 Updating email ID=${emailId} using RELAY endpoint with seen=true, seen_at=${seenAt}`);
     
     // EXACT mutation from API Explorer screenshot
     const UPDATE_QUERY = `
@@ -103,12 +110,11 @@ export default async (req, res) => {
           _set: { seen: true, seen_at: $seenAt }
         ) {
           id
-          seen
-          seen_at
         }
       }
     `;
 
+    // Use the relay endpoint for the UPDATE operation
     const { data: updateData, error: updateError } = await nhost.graphql.request(
       UPDATE_QUERY,
       { id: parseInt(emailId, 10), seenAt: seenAt },
@@ -124,8 +130,29 @@ export default async (req, res) => {
     
     if (updateError) {
       console.error(`❌ UPDATE Error: ${JSON.stringify(updateError)}`);
+      
+      // Fallback to regular GraphQL endpoint if relay fails
+      console.log("⚠️ Relay failed, trying standard GraphQL endpoint");
+      const { data: fallbackData, error: fallbackError } = await nhostRegular.graphql.request(
+        UPDATE_QUERY,
+        { id: parseInt(emailId, 10), seenAt: seenAt },
+        {
+          headers: {
+            "content-type": "application/json",
+            "x-hasura-admin-secret": adminSecret
+          }
+        }
+      );
+      
+      console.log("FALLBACK UPDATE RESPONSE:", fallbackData, fallbackError);
+      
+      if (fallbackError) {
+        console.error(`❌ FALLBACK Error: ${JSON.stringify(fallbackError)}`);
+      } else if (fallbackData?.update_emails_by_pk) {
+        console.log(`✅ FALLBACK SUCCESS: Email ID=${emailId} marked as seen!`);
+      }
     } else if (updateData?.update_emails_by_pk) {
-      console.log(`✅ SUCCESS: Email ID=${emailId} marked as seen!`);
+      console.log(`✅ RELAY SUCCESS: Email ID=${emailId} marked as seen!`);
       console.log("UPDATED DATA:", JSON.stringify(updateData.update_emails_by_pk));
     } else {
       console.warn(`⚠️ No errors but unexpected response format`);
