@@ -1,47 +1,55 @@
-
 import { NhostClient } from "@nhost/nhost-js";
 
 export default async (req, res) => {
+  // ─── 0) EARLY LOGGING ────────────────────────────────────
+  console.log("🔥 UPDATE FUNCTION FIRED 🔥", {
+    method: req.method,
+    query: req.query,
+  });
+
+  // ─── 1) CORS ──────────────────────────────────────────────
+  res.setHeader("Access-Control-Allow-Origin", "*");
+  res.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
+  res.setHeader("Access-Control-Allow-Headers", "Content-Type");
+  if (req.method === "OPTIONS") {
+    return res.status(200).end();
+  }
+
+  // ─── 2) PIXEL UTILITY ────────────────────────────────────
+  const sendPixel = () => {
+    res.setHeader("Content-Type", "image/gif");
+    res.send(
+      Buffer.from(
+        "R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7",
+        "base64"
+      )
+    );
+  };
+
   try {
-    // ─── CORS ──────────────────────────────────────────────
-    res.setHeader("Access-Control-Allow-Origin", "*");
-    res.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
-    res.setHeader("Access-Control-Allow-Headers", "Content-Type");
-    if (req.method === "OPTIONS") {
-      return res.status(200).end();
-    }
-
-    // ─── TRACKING PIXEL ────────────────────────────────────
-    const sendPixel = () => {
-      res.setHeader("Content-Type", "image/gif");
-      res.send(
-        Buffer.from(
-          "R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7",
-          "base64"
-        )
-      );
-    };
-
-    // ─── READ QUERY PARAM ──────────────────────────────────
+    // ─── 3) VALIDATE QUERY PARAM ────────────────────────────
     const imgText = req.query.text;
-    console.log("======= PIXEL TRACKING ACTIVATED =======");
-    console.log("Tracking ID received:", imgText);
     if (!imgText) {
-      console.warn("No tracking ID provided");
+      console.warn("⚠️  No tracking ID provided");
       return sendPixel();
     }
 
-    // ─── INIT NHOST CLIENT ─────────────────────────────────
-    const adminSecret =
-      process.env.NHOST_ADMIN_SECRET || "F$Iv7SMMyg*h5,8n(dC4Xfo#z-@^w80b";
+    // ─── 4) LOAD ADMIN SECRET ───────────────────────────────
+    const adminSecret = process.env.NHOST_ADMIN_SECRET;
+    if (!adminSecret) {
+      console.error("❌ Missing NHOST_ADMIN_SECRET");
+      return sendPixel();
+    }
     console.log("Using admin secret:", !!adminSecret);
+
+    // ─── 5) INIT NHOST CLIENT ───────────────────────────────
     const nhost = new NhostClient({
       graphqlUrl:
         "https://ttgygockyojigiwmkjsl.hasura.ap-south-1.nhost.run/v1/graphql",
       adminSecret,
     });
 
-    // ─── STEP 1: FIND EMAIL BY IMG_TEXT ───────────────────
+    // ─── 6) STEP 1: FIND EMAIL BY IMG_TEXT ──────────────────
     const GET_EMAIL_ID = `
       query GetEmailId($text: String!) {
         emails(where: { img_text: { _eq: $text } }) {
@@ -59,23 +67,25 @@ export default async (req, res) => {
       }
     );
     console.log("Find email response:", data, selectError);
+
     if (selectError || !data?.emails?.length) {
-      console.error("No email found or SELECT error:", selectError);
+      console.error("❌ No email found or SELECT error:", selectError);
       return sendPixel();
     }
 
     const { id: emailId, seen } = data.emails[0];
     console.log(`Found email ID=${emailId}, seen=${seen}`);
 
-    // ─── STEP 2: SKIP IF ALREADY SEEN ──────────────────────
+    // ─── 7) STEP 2: SKIP IF ALREADY SEEN ───────────────────
     if (seen === true) {
-      console.log("Already marked as seen; skipping update");
+      console.log("ℹ️  Already marked as seen; skipping update");
       return sendPixel();
     }
 
-    // ─── STEP 3: UPDATE WITH REAL TIMESTAMP ───────────────
+    // ─── 8) STEP 3: UPDATE WITH REAL TIMESTAMP ─────────────
     const seenAt = new Date().toISOString();
     console.log("Updating seen_at to:", seenAt);
+
     const UPDATE_QUERY = `
       mutation UpdateEmail($id: Int!, $seenAt: timestamptz!) {
         update_emails_by_pk(
@@ -86,7 +96,7 @@ export default async (req, res) => {
         }
       }
     `;
-    const { error: updateError } = await nhost.graphql.request(
+    const { data: updateData, error: updateError } = await nhost.graphql.request(
       UPDATE_QUERY,
       { id: parseInt(emailId, 10), seenAt },
       {
@@ -95,21 +105,15 @@ export default async (req, res) => {
       }
     );
     if (updateError) {
-      console.error("Failed to update seen flag:", updateError);
+      console.error("❌ Failed to update seen flag:", updateError);
     } else {
-      console.log("✅ Email marked as seen:", emailId);
+      console.log("✅ Email marked as seen:", updateData);
     }
 
-    // ─── FINAL: ALWAYS RETURN PIXEL ────────────────────────
+    // ─── 9) FINAL: ALWAYS RETURN PIXEL ──────────────────────
     return sendPixel();
   } catch (err) {
-    console.error("CRITICAL ERROR in function:", err);
-    res.setHeader("Content-Type", "image/gif");
-    res.send(
-      Buffer.from(
-        "R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7",
-        "base64"
-      )
-    );
+    console.error("💥 CRITICAL ERROR in function:", err);
+    return sendPixel();
   }
 };
