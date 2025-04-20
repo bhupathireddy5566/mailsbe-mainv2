@@ -85,9 +85,13 @@ const PopUp = ({ setPopUp }) => {
   // Generate tracking pixel URL on component mount
   useEffect(() => {
     const time = new Date().getTime();
+    // Use the exact functions URL format from the API Explorer screenshot
+    // ttgygockyojigiwmkjsl.functions.ap-south-1.nhost.run/v1/update
     setImgText(
-      `https://ttgygockyojigiwmkjsl.nhost.run/v1/functions/update?text=${time}`
+      `https://ttgygockyojigiwmkjsl.functions.ap-south-1.nhost.run/v1/update?text=${time}`
     );
+    console.log("Generated tracking URL:", 
+      `https://ttgygockyojigiwmkjsl.functions.ap-south-1.nhost.run/v1/update?text=${time}`);
   }, []);
 
   return (
