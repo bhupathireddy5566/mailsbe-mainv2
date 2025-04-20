@@ -91,8 +91,8 @@ const PopUp = ({ setPopUp }) => {
   };
 
   useEffect(() => {
-    // Generate a unique, simpler tracking ID - easier to track
-    const trackingId = Date.now().toString();
+    // Generate a unique tracking ID matching the format previously used
+    const trackingId = new Date().getTime().toString();
     
     // Construct the full tracking URL with the ID
     const trackingUrl = `${functionsUrl}/update?text=${trackingId}`;
