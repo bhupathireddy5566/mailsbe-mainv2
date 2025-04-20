@@ -15,22 +15,28 @@ import styles from "../styles/components/Popup.module.css";
 import { useState, useEffect, useRef } from "react";
 import { gql, useMutation } from "@apollo/client";
 
+// Use the exact functions URL from the Nhost dashboard
+const functionsUrl = 'https://ttgygockyojigiwmkjsl.functions.ap-south-1.nhost.run/v1';
+
 const ADD_EMAIL = gql`
   mutation addEmail(
-    $email: String
-    $description: String
-    $img_text: String
-    $user: String
+    $email: String!
+    $description: String!
+    $img_text: String!
+    $user_id: String!
   ) {
-    insert_emails(
-      objects: {
-        description: $description
-        email: $email
-        img_text: $img_text
-        user: $user
-      }
-    ) {
-      affected_rows
+    insert_emails_one(object: {
+      description: $description
+      email: $email
+      img_text: $img_text
+      user_id: $user_id
+    }) {
+      id
+      email
+      description
+      img_text
+      seen
+      created_at
     }
   }
 `;
@@ -50,29 +56,48 @@ const PopUp = ({ setPopUp }) => {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    
+    // Extract the tracking ID from the URL
+    const trackingUrl = imgText;
+    const trackingId = trackingUrl.split("=")[1];
+    
+    console.log("Submitting email with tracking ID:", trackingId);
+    console.log("Full tracking URL:", trackingUrl);
+    
+    if (!trackingId) {
+      toast.error("Invalid tracking URL");
+      return;
+    }
 
     try {
-      await addEmail({
+      // Save both the full tracking URL and ID for verification
+      const result = await addEmail({
         variables: {
           email: email,
           description: description,
-          img_text: imgText.split("=")[1],
-          user: user.id,
+          img_text: trackingId, // This is what the server will look for
+          user_id: user.id,
         },
       });
+      
+      console.log("Email successfully added with result:", result);
       toast.success("Email added successfully");
       setPopUp(false);
       window.location.reload();
     } catch (err) {
-      toast.error("Unable to add email");
+      console.error("Error adding email:", err);
+      toast.error("Unable to add email: " + (err.message || "Unknown error"));
     }
   };
 
   useEffect(() => {
+    // Generate a unique timestamp for tracking - use current time in milliseconds
     const time = new Date().getTime();
-    setImgText(
-      `https://ttgygockyojigiwmkjsl.nhost.run/v1/functions/update?text=${time}`
-    );
+    // Use the correct functions URL with the update function
+    const trackingUrl = `${functionsUrl}/update?text=${time}`;
+    console.log("Generated tracking URL:", trackingUrl);
+    console.log("Tracking ID:", time);
+    setImgText(trackingUrl);
   }, []);
 
   return (
@@ -137,6 +162,8 @@ const PopUp = ({ setPopUp }) => {
                   className={styles.pixelImg}
                   width={1}
                   height={1}
+                  alt="Tracking pixel"
+                  onError={(e) => console.error("Failed to load tracking pixel:", e)}
                 />
                 {name && name.substring(1, name.length)}
               </div>
