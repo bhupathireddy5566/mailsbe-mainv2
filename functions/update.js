@@ -108,7 +108,8 @@ export default async (req, res) => {
       { 
         'x-hasura-role': 'admin',
         'content-type': 'application/json',
-        'x-hasura': 'true'
+        'x-hasura': 'true',
+        'x-hasura-admin-secret': adminSecret
       }
     );
 
