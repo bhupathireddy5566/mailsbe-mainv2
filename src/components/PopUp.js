@@ -4,13 +4,10 @@ import {
   IconButton,
   FormHelperText,
   FormControl,
-  Button,
-  Box,
 } from "@mui/material";
 import LoadingButton from "@mui/lab/LoadingButton";
 import SaveIcon from "@mui/icons-material/Save";
 import HighlightOffIcon from "@mui/icons-material/HighlightOff";
-import ContentCopyIcon from "@mui/icons-material/ContentCopy";
 import toast from "react-hot-toast";
 import { useUserData } from "@nhost/react";
 
@@ -18,28 +15,22 @@ import styles from "../styles/components/Popup.module.css";
 import { useState, useEffect, useRef } from "react";
 import { gql, useMutation } from "@apollo/client";
 
-// Use the exact functions URL from the Nhost dashboard
-const functionsUrl = 'https://ttgygockyojigiwmkjsl.functions.ap-south-1.nhost.run/v1';
-
 const ADD_EMAIL = gql`
   mutation addEmail(
-    $email: String!
-    $description: String!
-    $img_text: String!
-    $user_id: String!
+    $email: String
+    $description: String
+    $img_text: String
+    $user: String
   ) {
-    insert_emails_one(object: {
-      description: $description
-      email: $email
-      img_text: $img_text
-      user_id: $user_id
-    }) {
-      id
-      email
-      description
-      img_text
-      seen
-      created_at
+    insert_emails(
+      objects: {
+        description: $description
+        email: $email
+        img_text: $img_text
+        user: $user
+      }
+    ) {
+      affected_rows
     }
   }
 `;
@@ -59,75 +50,30 @@ const PopUp = ({ setPopUp }) => {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    
-    // Extract the tracking ID from the URL
-    const trackingUrl = imgText;
-    const trackingId = trackingUrl.split("=")[1];
-    
-    console.log("Submitting email with tracking ID:", trackingId);
-    console.log("Full tracking URL:", trackingUrl);
-    
-    if (!trackingId) {
-      toast.error("Invalid tracking URL");
-      return;
-    }
 
     try {
-      // Save both the full tracking URL and ID for verification
-      const result = await addEmail({
+      await addEmail({
         variables: {
           email: email,
           description: description,
-          img_text: trackingId, // This is what the server will look for
-          user_id: user.id,
+          img_text: imgText.split("=")[1],
+          user: user.id,
         },
       });
-      
-      console.log("Email successfully added with result:", result);
       toast.success("Email added successfully");
       setPopUp(false);
       window.location.reload();
     } catch (err) {
-      console.error("Error adding email:", err);
-      toast.error("Unable to add email: " + (err.message || "Unknown error"));
+      toast.error("Unable to add email");
     }
   };
 
   useEffect(() => {
-    // Generate a unique timestamp for tracking - use current time in milliseconds
     const time = new Date().getTime();
-    // Use the correct functions URL with the update function
-    const trackingUrl = `https://ttgygockyojigiwmkjsl.hasura.ap-south-1.nhost.run/api/rest/pixel?text=${time}`;
-    console.log("Generated tracking URL:", trackingUrl);
-    console.log("Tracking ID:", time);
-    
-    setImgText(trackingUrl);
-  }, []);
-
-  // This function will copy just the URL of the tracking pixel
-  const copyTrackingUrl = () => {
-    navigator.clipboard.writeText(imgText)
-      .then(() => {
-        toast.success("Tracking URL copied! Insert as image in your email");
-      })
-      .catch(err => {
-        console.error("Failed to copy tracking URL:", err);
-        toast.error("Failed to copy tracking URL");
-      });
-  };
-  
-  // Display instructions based on email client
-  const showEmailInstructions = () => {
-    toast.success(
-      <div>
-        <p><strong>How to add tracking in your email:</strong></p>
-        <p>1. Copy the tracking URL</p>
-        <p>2. In your email, insert an image using the URL</p>
-        <p>3. Make the image very small (1x1px)</p>
-      </div>,
-      { duration: 8000 }
+    setImgText(
+      `https://ttgygockyojigiwmkjsl.nhost.run/v1/functions/update?text=${time}`
     );
-  };
+  }, []);
 
   return (
     <div className={styles.popup}>
@@ -181,54 +127,24 @@ const PopUp = ({ setPopUp }) => {
               fullWidth
               value={name}
               onChange={(e) => setName(e.target.value)}
-              sx={{ marginBottom: 2 }}
             />
 
-            <Box sx={{ 
-              border: '1px solid #e0e0e0', 
-              borderRadius: 1, 
-              padding: 2,
-              marginBottom: 2,
-              backgroundColor: '#f5f5f5'
-            }}>
-              <Typography variant="subtitle1" gutterBottom sx={{ fontWeight: 'medium' }}>
-                Track when your email is opened
-              </Typography>
-              
-              <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2, marginY: 2 }}>
-                <Button
-                  variant="contained"
-                  color="primary"
-                  startIcon={<ContentCopyIcon />}
-                  onClick={copyTrackingUrl}
-                  fullWidth
-                >
-                  COPY TRACKING URL
-                </Button>
-                
-                <Button 
-                  variant="outlined"
-                  color="info"
-                  onClick={showEmailInstructions}
-                  fullWidth
-                >
-                  HOW TO USE IN EMAIL
-                </Button>
-              </Box>
-              
-              <Typography variant="caption" color="textSecondary">
-                Add this as a tiny invisible image in your email to track when it's opened
-              </Typography>
-              
-              <TextField
-                value={imgText}
-                size="small"
-                fullWidth
-                InputProps={{ readOnly: true }}
-                sx={{ mt: 1, fontSize: '0.75rem' }}
-                variant="outlined"
-              />
-            </Box>
+            <div className={styles.copyBox}>
+              <div className={styles.imgDiv} ref={ref}>
+                {name && name.substring(0, 1)}
+                <img
+                  src={imgText}
+                  className={styles.pixelImg}
+                  width={1}
+                  height={1}
+                />
+                {name && name.substring(1, name.length)}
+              </div>
+              <span className={styles.imgHelperText}>
+                Copy this text and paste it in the email.{" "}
+                <strong>Imp: Don't erase it after pasting.</strong>
+              </span>
+            </div>
 
             {error && (
               <FormHelperText>{`Error occured! ${error.message}`}</FormHelperText>
