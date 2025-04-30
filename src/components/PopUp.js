@@ -1,18 +1,21 @@
+import React, { useState, useEffect, useRef } from "react";
 import {
   TextField,
   Typography,
   IconButton,
   FormHelperText,
   FormControl,
+  Dialog,
+  DialogTitle,
+  DialogContent,
+  DialogActions,
+  Box,
 } from "@mui/material";
 import LoadingButton from "@mui/lab/LoadingButton";
 import SaveIcon from "@mui/icons-material/Save";
-import HighlightOffIcon from "@mui/icons-material/HighlightOff";
+import CloseIcon from "@mui/icons-material/Close";
 import toast from "react-hot-toast";
 import { supabase } from "../supabaseClient"; // Import Supabase client
-
-import styles from "../styles/components/Popup.module.css";
-import { useState, useEffect, useRef } from "react";
 
 // Update to use the Supabase function URL
 const functionUrl = 'https://ajkfmaqdwksljzkygfkd.functions.supabase.co/swift-responder';
@@ -89,28 +92,53 @@ const PopUp = ({ setPopUp }) => {
     }
   };
 
-  return (
-    <div className={styles.popup}>
-      <div className={styles.popUpDiv}>
-        {/* Header */}
-        <div className={styles.header}>
-          <Typography variant="h6" component="h4">
-            Enter new email details
-          </Typography>
-          <IconButton
-            aria-label="Close popup"
-            onClick={() => setPopUp(false)}
-          >
-            <HighlightOffIcon />
-          </IconButton>
-        </div>
+  // Tracking pixel display style
+  const pixelDisplayStyle = {
+    padding: '15px',
+    border: '1px solid #e0e0e0',
+    borderRadius: '4px',
+    backgroundColor: '#f5f5f5',
+    marginBottom: '20px',
+    position: 'relative',
+    overflow: 'hidden',
+    wordBreak: 'break-word',
+  };
 
-        {/* Form */}
-        <form className={styles.groupForm} onSubmit={handleSubmit}>
-          <FormControl sx={{ m: 0, width: "100%" }} error={!!error}>
+  const pixelHelperTextStyle = {
+    fontSize: '12px',
+    color: '#666',
+    marginTop: '8px',
+    display: 'block',
+  };
+
+  return (
+    <Dialog 
+      open={true} 
+      onClose={() => setPopUp(false)}
+      maxWidth="sm"
+      fullWidth
+    >
+      <DialogTitle sx={{ 
+        display: 'flex', 
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        borderBottom: '1px solid #e0e0e0'
+      }}>
+        <Typography variant="h6">Enter new email details</Typography>
+        <IconButton
+          aria-label="Close popup"
+          onClick={() => setPopUp(false)}
+          size="small"
+        >
+          <CloseIcon />
+        </IconButton>
+      </DialogTitle>
+      
+      <form onSubmit={handleSubmit}>
+        <DialogContent sx={{ pt: 3 }}>
+          <FormControl sx={{ width: "100%" }} error={!!error}>
             {/* Email Field */}
             <TextField
-              className={styles.inputOutlinedTextField}
               fullWidth
               color="primary"
               variant="outlined"
@@ -118,7 +146,7 @@ const PopUp = ({ setPopUp }) => {
               label="Email"
               placeholder="Receiver's email"
               size="medium"
-              margin="none"
+              margin="normal"
               required
               value={email}
               onChange={(e) => setEmail(e.target.value)}
@@ -126,15 +154,16 @@ const PopUp = ({ setPopUp }) => {
 
             {/* Description Field */}
             <TextField
-              className={styles.textAreaOutlinedTextField}
               color="primary"
               variant="outlined"
               multiline
+              rows={2}
               label="Description"
               placeholder="Some distinct description"
               helperText="This text will help to separate emails."
               required
               fullWidth
+              margin="normal"
               value={description}
               onChange={(e) => setDescription(e.target.value)}
             />
@@ -148,53 +177,55 @@ const PopUp = ({ setPopUp }) => {
               helperText="An image will be attached with this text."
               required
               fullWidth
+              margin="normal"
               value={name}
               onChange={(e) => setName(e.target.value)}
             />
 
             {/* Tracking Pixel */}
-            <div className={styles.copyBox}>
-              <div className={styles.imgDiv} ref={ref}>
+            <Box sx={{ mt: 2 }}>
+              <Typography variant="subtitle2" gutterBottom>Tracking Pixel</Typography>
+              <Box sx={pixelDisplayStyle} ref={ref}>
                 {name && name.substring(0, 1)}
                 <img
                   src={imgText}
-                  className={styles.pixelImg}
                   width={1}
                   height={1}
                   alt="Tracking pixel"
+                  style={{ opacity: 0 }}
                 />
                 {name && name.substring(1, name.length)}
-              </div>
-              <span className={styles.imgHelperText}>
+              </Box>
+              <Typography variant="caption" sx={pixelHelperTextStyle}>
                 Copy this text and paste it in the email.{" "}
                 <strong>Important: Don't erase it after pasting.</strong>
-              </span>
-            </div>
+              </Typography>
+            </Box>
 
             {/* Error Message */}
             {error && (
-              <FormHelperText>
+              <FormHelperText error>
                 Error occurred! {error}
               </FormHelperText>
             )}
-
-            {/* Submit Button */}
-            <LoadingButton
-              className={styles.buttonContainedText}
-              variant="contained"
-              color="primary"
-              endIcon={<SaveIcon />}
-              size="large"
-              fullWidth
-              type="submit"
-              loading={loading}
-            >
-              Save
-            </LoadingButton>
           </FormControl>
-        </form>
-      </div>
-    </div>
+        </DialogContent>
+        
+        <DialogActions sx={{ p: 2, pt: 0 }}>
+          <LoadingButton
+            variant="contained"
+            color="primary"
+            endIcon={<SaveIcon />}
+            size="large"
+            fullWidth
+            type="submit"
+            loading={loading}
+          >
+            Save
+          </LoadingButton>
+        </DialogActions>
+      </form>
+    </Dialog>
   );
 };
 

@@ -1,7 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
-import { ThemeProvider, createTheme } from '@mui/material/styles';
-import CssBaseline from '@mui/material/CssBaseline';
+import { ThemeProvider, createTheme, CssBaseline } from '@mui/material';
 import { Toaster } from 'react-hot-toast';
 import { supabase } from './supabaseClient';
 
@@ -10,6 +9,7 @@ import Auth from './components/Auth';
 import EmailsTable from './components/EmailsTable';
 import Sidebar from './components/Sidebar';
 import PopUp from './components/PopUp';
+import Spinner from './components/Spinner';
 
 // Create theme
 const theme = createTheme({
@@ -54,7 +54,7 @@ function App() {
   }, []);
 
   if (loading) {
-    return <div>Loading...</div>;
+    return <Spinner />;
   }
 
   return (
