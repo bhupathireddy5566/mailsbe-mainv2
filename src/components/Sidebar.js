@@ -1,80 +1,145 @@
-import { Link, useNavigate } from "react-router-dom";
-import { useCallback } from "react";
-import { useSignOut } from "@nhost/react";
+import React from 'react';
+import { Box, Button, Typography, Divider, IconButton, Avatar } from '@mui/material';
+import AddIcon from '@mui/icons-material/Add';
+import LogoutIcon from '@mui/icons-material/Logout';
+import DashboardIcon from '@mui/icons-material/Dashboard';
+import SettingsIcon from '@mui/icons-material/Settings';
+import { supabase } from '../supabaseClient';
 
-const Sidebar = ({ styles, user, setPopUp }) => {
-  const navigate = useNavigate();
-  const { signOut } = useSignOut();
-
-  const onLogOutButtonClick = useCallback(() => {
-    signOut();
-    navigate("/");
-  }, [navigate, signOut]);
-
-  const name = user?.metadata?.name ? user?.metadata?.name : user.displayName;
-  const email = user.email;
-
-  const image = user.avatarUrl.includes("gravatar.com")
-    ? user.avatarUrl
-    : `https://img.icons8.com/external-linector-lineal-linector/344/external-avatar-man-avatar-linector-lineal-linector-6.png`;
+const Sidebar = ({ userName, userEmail, setShowPopup }) => {
+  // Handle logout
+  const handleLogout = async () => {
+    const { error } = await supabase.auth.signOut();
+    if (error) console.error('Error signing out:', error);
+  };
 
   return (
-    <div className={styles.sideBarDiv}>
-      <Link className={styles.logoA} to="/">
-        <img
-          className={styles.contactMailIcon}
-          alt="Mailsbe logo"
-          src="../contact-mail.svg"
-        />
-        <div className={styles.mAILBESDiv}>MAILSBE</div>
-      </Link>
-      <button
-        className={styles.cTAButton}
-        autoFocus
-        onClick={() => setPopUp(true)}
+    <Box
+      sx={{
+        width: 250,
+        backgroundColor: '#FFFFFF',
+        borderRight: '1px solid #E5E7EB',
+        height: '100vh',
+        display: 'flex',
+        flexDirection: 'column',
+        position: 'sticky',
+        top: 0,
+      }}
+    >
+      {/* Logo */}
+      <Box sx={{ p: 2, display: 'flex', alignItems: 'center' }}>
+        <Typography 
+          variant="h5" 
+          component="div" 
+          sx={{ 
+            fontWeight: 'bold', 
+            color: '#00875A',
+            letterSpacing: '-0.5px'
+          }}
+        >
+          MAILSBE
+        </Typography>
+      </Box>
+
+      {/* Compose Button */}
+      <Button
+        variant="contained"
+        startIcon={<AddIcon />}
+        onClick={() => setShowPopup(true)}
+        sx={{ 
+          m: 2, 
+          py: 1,
+          textTransform: 'none',
+          fontWeight: 'medium'
+        }}
       >
-        <img className={styles.arrowDownIcon} alt="Compose mail" src="../icon.svg" />
-        <div className={styles.buttonDiv}>Compose mail</div>
-      </button>
-      <div className={styles.menuDiv}>
-        <div className={styles.titleDiv}>Menu</div>
-        <div className={styles.navDiv}>
-          <Link to="/app" className={styles.overviewA}>
-            <img className={styles.icon1} alt="Overview" src="../icon1.svg" />
-            <div className={styles.overviewDiv}>Overview</div>
-          </Link>
-        </div>
-      </div>
-      <Link to="/app/profile" className={styles.notifications}>
-        <img className={styles.icon1} alt="Settings" src="../icon3.svg" />
-        <div className={styles.overviewDiv}>Settings</div>
-      </Link>
-      <div className={styles.divider} />
-      <div className={styles.menuDiv}>
-        <div className={styles.titleDiv}>Profile</div>
-        <div className={styles.frameDiv2}>
-          <img
-            className={styles.image1Icon}
-            alt={name.substring(0, 1)}
-            src={image}
-          />
-          <div className={styles.textAndSupportingText}>
-            <div className={styles.titleDiv}>{name}</div>
-            <div className={styles.aashishpanthi11gmailcomDiv}>{email}</div>
-          </div>
-        </div>
-      </div>
-      <button className={styles.logOutButton} onClick={onLogOutButtonClick}>
-        <img
-          className={styles.moreVerticalIcon}
-          alt=""
-          src="../left-icon.svg"
-        />
-        <div className={styles.layoutDiv}>
-          <div className={styles.labelDiv}>Log out</div>
-        </div>
-      </button>
-    </div>
+        Compose mail
+      </Button>
+
+      {/* Navigation */}
+      <Box sx={{ p: 1 }}>
+        <Typography variant="subtitle2" sx={{ px: 2, py: 1, color: '#6B7280' }}>
+          Menu
+        </Typography>
+        
+        <Button
+          fullWidth
+          startIcon={<DashboardIcon />}
+          sx={{ 
+            justifyContent: 'flex-start', 
+            textTransform: 'none',
+            py: 1,
+            px: 2,
+            mb: 1,
+            color: '#111827',
+            backgroundColor: '#F3F4F6',
+            '&:hover': {
+              backgroundColor: '#E5E7EB',
+            }
+          }}
+        >
+          Overview
+        </Button>
+        
+        <Button
+          fullWidth
+          startIcon={<SettingsIcon />}
+          sx={{ 
+            justifyContent: 'flex-start', 
+            textTransform: 'none',
+            py: 1,
+            px: 2,
+            color: '#6B7280',
+            '&:hover': {
+              backgroundColor: '#F3F4F6',
+            }
+          }}
+        >
+          Settings
+        </Button>
+      </Box>
+
+      {/* Spacer */}
+      <Box sx={{ flexGrow: 1 }} />
+
+      {/* Profile Section */}
+      <Box sx={{ p: 2 }}>
+        <Divider sx={{ mb: 2 }} />
+        
+        <Box sx={{ display: 'flex', alignItems: 'center', mb: 2 }}>
+          <Avatar sx={{ mr: 2, bgcolor: '#00875A' }}>
+            {userName?.charAt(0) || 'U'}
+          </Avatar>
+          <Box sx={{ flexGrow: 1, overflow: 'hidden' }}>
+            <Typography variant="subtitle2" noWrap>
+              {userName || 'User'}
+            </Typography>
+            <Typography variant="body2" color="text.secondary" noWrap>
+              {userEmail || 'user@example.com'}
+            </Typography>
+          </Box>
+        </Box>
+        
+        {/* Logout Button */}
+        <Button
+          fullWidth
+          startIcon={<LogoutIcon />}
+          onClick={handleLogout}
+          sx={{ 
+            justifyContent: 'flex-start', 
+            textTransform: 'none',
+            py: 1,
+            px: 2,
+            color: '#EF4444',
+            '&:hover': {
+              backgroundColor: '#FEE2E2',
+            }
+          }}
+        >
+          Log out
+        </Button>
+      </Box>
+    </Box>
   );
 };
 
