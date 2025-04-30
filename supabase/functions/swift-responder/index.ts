@@ -12,14 +12,17 @@ const supabase = createClient(supabaseUrl, supabaseServiceKey)
 const TRACKING_PIXEL = 'R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7'
 
 serve(async (req) => {
-  // Handle CORS preflight requests
+  console.log(`📢 Tracking request received from: ${req.headers.get('Origin') || 'unknown origin'}`)
+
+  // Handle CORS preflight requests more permissively
   if (req.method === 'OPTIONS') {
     return new Response(null, {
       status: 204,
       headers: {
         'Access-Control-Allow-Origin': '*',
         'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
-        'Access-Control-Allow-Headers': 'Content-Type',
+        'Access-Control-Allow-Headers': 'Content-Type, Authorization, x-client-info, apikey',
+        'Access-Control-Max-Age': '86400',
       },
     })
   }
@@ -76,7 +79,7 @@ serve(async (req) => {
       }
     }
 
-    // Always return the tracking pixel, regardless of processing outcome
+    // Enhanced headers to prevent caching and ensure proper CORS
     return new Response(
       Uint8Array.from(atob(TRACKING_PIXEL), c => c.charCodeAt(0)),
       { 
@@ -86,7 +89,9 @@ serve(async (req) => {
           'Pragma': 'no-cache',
           'Expires': '0',
           'Surrogate-Control': 'no-store',
-          'Access-Control-Allow-Origin': '*'
+          'Access-Control-Allow-Origin': '*',
+          'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+          'Access-Control-Max-Age': '86400'
         } 
       }
     )
@@ -96,7 +101,13 @@ serve(async (req) => {
     // Return the tracking pixel even if there's an error
     return new Response(
       Uint8Array.from(atob(TRACKING_PIXEL), c => c.charCodeAt(0)),
-      { headers: { 'Content-Type': 'image/gif', 'Access-Control-Allow-Origin': '*' } }
+      { 
+        headers: { 
+          'Content-Type': 'image/gif', 
+          'Access-Control-Allow-Origin': '*',
+          'Cache-Control': 'no-store, no-cache'
+        } 
+      }
     )
   }
 }) 

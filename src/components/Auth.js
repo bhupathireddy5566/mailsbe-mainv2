@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Button, Typography, Box, Paper, TextField, Divider } from '@mui/material';
 import GoogleIcon from '@mui/icons-material/Google';
 import EmailIcon from '@mui/icons-material/Email';
@@ -8,6 +8,14 @@ import toast from 'react-hot-toast';
 const Auth = () => {
   const [email, setEmail] = useState('');
   const [loading, setLoading] = useState(false);
+  const [redirectUrl, setRedirectUrl] = useState('');
+
+  // Set up the redirect URL
+  useEffect(() => {
+    // Get the current URL without hash or query params
+    const url = window.location.origin + window.location.pathname;
+    setRedirectUrl(url);
+  }, []);
 
   // Handle Google sign in
   const signInWithGoogle = async () => {
@@ -16,7 +24,7 @@ const Auth = () => {
       const { error } = await supabase.auth.signInWithOAuth({
         provider: 'google',
         options: {
-          redirectTo: window.location.origin
+          redirectTo: redirectUrl
         }
       });
       
@@ -46,7 +54,7 @@ const Auth = () => {
       const { error } = await supabase.auth.signInWithOtp({
         email: email,
         options: {
-          emailRedirectTo: window.location.origin
+          emailRedirectTo: redirectUrl
         }
       });
       

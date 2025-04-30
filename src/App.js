@@ -35,15 +35,37 @@ function App() {
   const [showPopup, setShowPopup] = useState(false);
 
   useEffect(() => {
+    // Handle URL hash for access token authentication
+    const handleHashParams = async () => {
+      // Check if URL has an access token in the hash
+      if (window.location.hash.includes('access_token=')) {
+        // The redirected user has a hash with access_token, we need to explicitly refresh to get session
+        try {
+          const { data, error } = await supabase.auth.getSession();
+          if (!error && data.session) {
+            setSession(data.session);
+          }
+          // Remove hash to clean up URL
+          window.location.hash = '';
+        } catch (error) {
+          console.error('Error handling hash params:', error);
+        }
+      }
+    };
+
+    handleHashParams();
+
     // Get initial session
     supabase.auth.getSession().then(({ data: { session } }) => {
+      console.log('Initial session check:', session ? 'Logged in' : 'Not logged in');
       setSession(session);
       setLoading(false);
     });
 
     // Listen for auth changes
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      (_event, session) => {
+      (event, session) => {
+        console.log('Auth state changed:', event, session ? 'Has session' : 'No session');
         setSession(session);
         setLoading(false);
       }
