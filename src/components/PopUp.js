@@ -9,90 +9,85 @@ import LoadingButton from "@mui/lab/LoadingButton";
 import SaveIcon from "@mui/icons-material/Save";
 import HighlightOffIcon from "@mui/icons-material/HighlightOff";
 import toast from "react-hot-toast";
-import { useUserData } from "@nhost/react";
+import { supabase } from "../supabaseClient"; // Import Supabase client
 
 import styles from "../styles/components/Popup.module.css";
 import { useState, useEffect, useRef } from "react";
-import { gql, useMutation } from "@apollo/client";
 
-// Construct Functions URL from REACT_APP env vars or fallback
-const subdomain = process.env.REACT_APP_NHOST_SUBDOMAIN || "ttgygockyojigiwmkjsl";
-const region = process.env.REACT_APP_NHOST_REGION || "ap-south-1";
-const functionsUrl = process.env.REACT_APP_FUNCTIONS_URL || `https://${subdomain}.functions.${region}.nhost.run/v1`;
+// Use Supabase Edge Function URL
+const functionUrl = "https://ajkfmaqdwksljzkygfkd.supabase.co/functions/v1/swift-responder";
 
-console.log(`Using Functions URL: ${functionsUrl}`);
-
-const ADD_EMAIL = gql`
-  mutation addEmail(
-    $email: String!
-    $description: String!
-    $img_text: String!
-    $user_id: String!
-  ) {
-    insert_emails_one(object: {
-      description: $description
-      email: $email
-      img_text: $img_text
-      user_id: $user_id
-    }) {
-      id
-      email
-      description
-      img_text
-      seen
-      created_at
-    }
-  }
-`;
+console.log(`Using Edge Function URL: ${functionUrl}`);
 
 const PopUp = ({ setPopUp }) => {
-  // Get user data
-  const user = useUserData();
-
   // State variables
   const [email, setEmail] = useState("");
   const [description, setDescription] = useState("");
-  const [name, setName] = useState(user?.displayName || ""); // Fallback if displayName is null
+  const [name, setName] = useState("");
   const [imgText, setImgText] = useState("");
-
-  // Mutation hook
-  const [addEmail, { data, loading, error }] = useMutation(ADD_EMAIL);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState(null);
 
   // Ref for the image container
   const ref = useRef();
 
-  // Handle form submission
-  const handleSubmit = async (e) => {
-    e.preventDefault();
-
-    try {
-      await addEmail({
-        variables: {
-          email: email,
-          description: description,
-          img_text: imgText.split("=")[1], // Extract the query parameter
-          user_id: user.id,
-        },
-      });
-      toast.success("Email added successfully");
-      setPopUp(false);
-      window.location.reload();
-    } catch (err) {
-      toast.error("Unable to add email");
-    }
-  };
+  // Get user data from Supabase
+  useEffect(() => {
+    const getUser = async () => {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (user && user.user_metadata) {
+        setName(user.user_metadata.name || "");
+      }
+    };
+    
+    getUser();
+  }, []);
 
   // Generate tracking pixel URL on component mount
   useEffect(() => {
     const time = new Date().getTime();
-    // Use the exact functions URL format from the API Explorer screenshot
-    // ttgygockyojigiwmkjsl.functions.ap-south-1.nhost.run/v1/update
-    setImgText(
-      `https://ttgygockyojigiwmkjsl.functions.ap-south-1.nhost.run/v1/update?text=${time}`
-    );
-    console.log("Generated tracking URL:", 
-      `https://ttgygockyojigiwmkjsl.functions.ap-south-1.nhost.run/v1/update?text=${time}`);
+    setImgText(`${functionUrl}?text=${time}`);
+    console.log("Generated tracking URL:", `${functionUrl}?text=${time}`);
   }, []);
+
+  // Handle form submission
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    setLoading(true);
+    setError(null);
+
+    try {
+      // Get current user
+      const { data: { user } } = await supabase.auth.getUser();
+      
+      if (!user) {
+        throw new Error("User not authenticated");
+      }
+
+      // Add email to Supabase
+      const { data, error: insertError } = await supabase
+        .from('emails')
+        .insert({
+          email: email,
+          description: description,
+          img_text: imgText.split("=")[1], // Extract the query parameter
+          user_id: user.id,
+        })
+        .select();
+
+      if (insertError) throw insertError;
+      
+      toast.success("Email added successfully");
+      setPopUp(false);
+      window.location.reload();
+    } catch (err) {
+      console.error("Error adding email:", err);
+      setError(err.message);
+      toast.error("Unable to add email");
+    } finally {
+      setLoading(false);
+    }
+  };
 
   return (
     <div className={styles.popup}>
@@ -179,7 +174,7 @@ const PopUp = ({ setPopUp }) => {
             {/* Error Message */}
             {error && (
               <FormHelperText>
-                Error occurred! {error.message}
+                Error occurred! {error}
               </FormHelperText>
             )}
 

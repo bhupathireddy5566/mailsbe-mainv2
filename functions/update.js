@@ -1,9 +1,14 @@
 // Use axios for HTTP requests - more reliable than raw https
 // VERSION: 2.0 - PURE AXIOS IMPLEMENTATION
 const axios = require('axios');
+const { createClient } = require('@supabase/supabase-js');
+
+// Your Supabase project details
+const supabaseUrl = 'https://ajkfmaqdwksljzkygfkd.supabase.co';
+const supabaseKey = 'ei6s3vIqYtdJXzkx'; // This should be your service role key for admin access
 
 export default async (req, res) => {
-  console.log("📢 TRACKING PIXEL V2.0 - REQUEST RECEIVED", {
+  console.log("📢 SUPABASE TRACKING PIXEL - REQUEST RECEIVED", {
     timestamp: new Date().toISOString(),
     method: req.method,
     url: req.url,
@@ -13,7 +18,7 @@ export default async (req, res) => {
   // ─── 1) CORS HEADERS ───────────────────────────────────────
   res.setHeader("Access-Control-Allow-Origin", "*");
   res.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
-  res.setHeader("Access-Control-Allow-Headers", "Content-Type, x-hasura-admin-secret");
+  res.setHeader("Access-Control-Allow-Headers", "Content-Type");
   
   if (req.method === "OPTIONS") {
     return res.status(200).end();
@@ -27,11 +32,6 @@ export default async (req, res) => {
   };
 
   try {
-    // Verify no NhostClient is present
-    if (typeof NhostClient !== 'undefined') {
-      console.error("❌ ERROR: NhostClient should not be defined");
-    }
-
     // ─── 3) VALIDATE QUERY PARAM ────────────────────────────
     const imgText = req.query.text;
     if (!imgText) {
@@ -40,68 +40,31 @@ export default async (req, res) => {
     }
     console.log(`✅ Tracking ID (text param): ${imgText}`);
 
-    // ─── 4) SETUP DIRECT AXIOS REQUEST ─────────────────────
-    // The Hasura endpoint from the API Explorer screenshot
-    const GRAPHQL_URL = 'https://ttgygockyojigiwmkjsl.hasura.ap-south-1.nhost.run/v1/graphql';
-    const ADMIN_SECRET = "F$Iv7SMMyg*h5,8n(dC4Xfo#z-@^w80b";
+    // ─── 4) INITIALIZE SUPABASE CLIENT ────────────────────────
+    console.log(`🔌 Connecting to Supabase at ${supabaseUrl}`);
+    const supabase = createClient(supabaseUrl, supabaseKey);
     
-    const headers = {
-      'Content-Type': 'application/json',
-      'x-hasura-admin-secret': ADMIN_SECRET
-    };
-    
-    // Helper function to make GraphQL requests
-    async function executeGraphQL(query, variables) {
-      try {
-        console.log(`🔄 Executing GraphQL: ${query.substring(0, 80)}...`);
-        console.log(`🔄 Variables: ${JSON.stringify(variables)}`);
-        
-        const response = await axios({
-          url: GRAPHQL_URL,
-          method: 'POST',
-          headers: headers,
-          data: {
-            query: query,
-            variables: variables
-          }
-        });
-        
-        console.log(`✅ GraphQL response status: ${response.status}`);
-        console.log(`✅ GraphQL response data: ${JSON.stringify(response.data)}`);
-        
-        return response.data;
-      } catch (error) {
-        console.error("❌ GraphQL request failed:", error.message);
-        if (error.response) {
-          console.error(`Status: ${error.response.status}`);
-          console.error(`Data: ${JSON.stringify(error.response.data)}`);
-        }
-        throw error;
-      }
-    }
-
     // ─── 5) QUERY EMAIL BY IMG_TEXT ─────────────────────────
-    const GET_EMAIL_QUERY = `
-      query GetEmailByImgText($text: String!) {
-        emails(where: { img_text: { _eq: $text } }, limit: 1) {
-          id
-          seen
-          seen_at
-        }
-      }
-    `;
-    
     console.log(`🔍 Finding email with img_text = "${imgText}"`);
-    const queryResult = await executeGraphQL(GET_EMAIL_QUERY, { text: imgText });
+    const { data: email, error: selectError } = await supabase
+      .from('emails')
+      .select('id, seen, seen_at')
+      .eq('img_text', imgText)
+      .limit(1)
+      .single();
+    
+    // Handle query errors
+    if (selectError) {
+      console.error(`❌ Supabase query error:`, selectError);
+      return sendPixel();
+    }
     
     // Check if email exists
-    if (!queryResult.data || !queryResult.data.emails || queryResult.data.emails.length === 0) {
+    if (!email) {
       console.warn(`⚠️ No email found with img_text = "${imgText}"`);
       return sendPixel();
     }
     
-    // Extract email info
-    const email = queryResult.data.emails[0];
     console.log(`📧 Found email ID=${email.id}, current seen status=${email.seen}`);
     
     // ─── 6) SKIP IF ALREADY SEEN ───────────────────────────
@@ -114,30 +77,23 @@ export default async (req, res) => {
     const seenAt = new Date().toISOString();
     console.log(`📝 Updating email ID=${email.id} to seen=true, seen_at=${seenAt}`);
     
-    // Use simple mutation format from API Explorer
-    const UPDATE_MUTATION = `
-      mutation UpdateEmail($id: Int!, $seenAt: timestamptz!) {
-        update_emails_by_pk(
-          pk_columns: { id: $id },
-          _set: { seen: true, seen_at: $seenAt }
-        ) {
-          id
-          seen
-          seen_at
-        }
-      }
-    `;
+    const { data: updatedEmail, error: updateError } = await supabase
+      .from('emails')
+      .update({ 
+        seen: true, 
+        seen_at: seenAt 
+      })
+      .eq('id', email.id)
+      .select('id, seen, seen_at')
+      .single();
     
-    const mutationResult = await executeGraphQL(UPDATE_MUTATION, {
-      id: parseInt(email.id, 10),
-      seenAt: seenAt
-    });
-    
-    if (mutationResult.data && mutationResult.data.update_emails_by_pk) {
+    if (updateError) {
+      console.error(`❌ Supabase update error:`, updateError);
+    } else if (updatedEmail) {
       console.log(`✅ SUCCESSFULLY updated email ID=${email.id}`);
-      console.log(`✅ New values: seen=${mutationResult.data.update_emails_by_pk.seen}, seen_at=${mutationResult.data.update_emails_by_pk.seen_at}`);
+      console.log(`✅ New values: seen=${updatedEmail.seen}, seen_at=${updatedEmail.seen_at}`);
     } else {
-      console.warn(`⚠️ Unexpected mutation response:`, JSON.stringify(mutationResult));
+      console.warn(`⚠️ Update returned no data`);
     }
     
     // ─── 8) ALWAYS RETURN PIXEL ──────────────────────────────

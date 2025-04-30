@@ -1,197 +1,153 @@
-import { Delete } from "@mui/icons-material";
-import { IconButton } from "@mui/material";
-import { gql, useLazyQuery, useMutation } from "@apollo/client";
-import { useUserData } from "@nhost/react";
-import { CircularProgress } from "@mui/material";
-import toast from "react-hot-toast";
-import { useEffect, useState } from "react";
+import React, { useState, useEffect } from 'react';
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableContainer,
+  TableHead,
+  TableRow,
+  Paper,
+  Typography,
+  Chip
+} from '@mui/material';
+import { supabase } from '../supabaseClient';
+import Spinner from './Spinner';
 
-const GET_EMAILS = gql`
-  query getEmails($user_id: String) {
-    emails(
-      order_by: { created_at: desc }
-      where: { user_id: { _eq: $user_id } }
-    ) {
-      created_at
-      description
-      email
-      id
-      img_text
-      seen
-      seen_at
-    }
-  }
-`;
+// Format date to a readable format
+const formatDate = (dateString) => {
+  if (!dateString) return 'N/A';
+  const date = new Date(dateString);
+  return date.toLocaleString();
+};
 
-const DELETE_EMAIL = gql`
-  mutation deleteEmail($id: Int!) {
-    delete_emails(where: { id: { _eq: $id } }) {
-      affected_rows
-    }
-  }
-`;
-
-const EmailsTable = ({ styles }) => {
-  const user = useUserData();
+const EmailsTable = () => {
   const [emails, setEmails] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
 
-  // Use useLazyQuery with proper error handling
-  const [getEmails, { loading, data, error }] = useLazyQuery(GET_EMAILS, {
-    variables: { user_id: user?.id || "" },
-    onCompleted: (data) => {
-      if (data?.emails) setEmails(data.emails);
-    },
-    onError: (error) => {
-      toast.error("Failed to fetch emails");
-      console.error(error);
-    },
-  });
-
-  // UseMutation with refetchQueries to update cache
-  const [deleteEmailMutation, { loading: deleteLoading }] = useMutation(
-    DELETE_EMAIL,
-    {
-      refetchQueries: [{ query: GET_EMAILS, variables: { user_id: user?.id } }],
-    }
-  );
-
-  // Fetch emails when user is available
   useEffect(() => {
-    if (user?.id) {
-      getEmails();
-    }
-  }, [user?.id]);
+    // Fetch emails from Supabase
+    const fetchEmails = async () => {
+      try {
+        setLoading(true);
+        
+        // Get current user
+        const { data: { user } } = await supabase.auth.getUser();
+        
+        if (!user) {
+          throw new Error('User not authenticated');
+        }
+        
+        // Fetch emails for current user
+        const { data, error } = await supabase
+          .from('emails')
+          .select('*')
+          .eq('user_id', user.id)
+          .order('created_at', { ascending: false });
+          
+        if (error) throw error;
+        
+        setEmails(data || []);
+      } catch (err) {
+        console.error('Error fetching emails:', err);
+        setError(err.message);
+      } finally {
+        setLoading(false);
+      }
+    };
+    
+    fetchEmails();
+  }, []);
 
-  // Delete handler
-  const handleDelete = async (id) => {
-    try {
-      const confirmed = window.confirm("Are you sure you want to delete this?");
-      if (!confirmed) return;
+  // Subscribe to changes in real-time
+  useEffect(() => {
+    const setupSubscription = async () => {
+      try {
+        const { data: { user } } = await supabase.auth.getUser();
+        
+        if (!user) return;
+        
+        // Set up real-time subscription
+        const subscription = supabase
+          .channel('emails-changes')
+          .on('postgres_changes', {
+            event: '*', 
+            schema: 'public',
+            table: 'emails',
+            filter: `user_id=eq.${user.id}`
+          }, (payload) => {
+            // Update local state based on change type
+            if (payload.eventType === 'INSERT') {
+              setEmails(prev => [payload.new, ...prev]);
+            } else if (payload.eventType === 'UPDATE') {
+              setEmails(prev => prev.map(email => 
+                email.id === payload.new.id ? payload.new : email
+              ));
+            }
+          })
+          .subscribe();
+          
+        // Clean up subscription on unmount
+        return () => {
+          subscription.unsubscribe();
+        };
+      } catch (err) {
+        console.error('Error setting up subscription:', err);
+      }
+    };
+    
+    setupSubscription();
+  }, []);
 
-      await deleteEmailMutation({ variables: { id } });
-      toast.success("Email deleted successfully");
-    } catch (error) {
-      toast.error("Failed to delete email");
-      console.error(error);
-    }
-  };
-
-  // Loading state
-  if (loading || !user?.id) {
+  if (loading) return <Spinner />;
+  
+  if (error) {
     return (
-      <div className={styles.loader}>
-        <CircularProgress />
-      </div>
+      <Typography color="error" variant="h6" align="center" sx={{ my: 4 }}>
+        Error loading emails: {error}
+      </Typography>
     );
   }
-
-  // Error state
-  if (error) {
-    return <div className={styles.loader}>Error loading emails</div>;
+  
+  if (emails.length === 0) {
+    return (
+      <Typography variant="h6" align="center" sx={{ my: 4 }}>
+        No emails added yet. Add your first email to track opens!
+      </Typography>
+    );
   }
-
-  // Empty state
-  if (!emails || emails.length === 0) {
-    return <div className={styles.loader}>No emails found</div>;
-  }
-
+  
   return (
-    <div className={styles.contentDiv1}>
-      {/* Email Column */}
-      <div className={styles.columnDiv}>
-        <div className={styles.tableHeaderCell}>
-          <div className={styles.tableHeaderDiv}>
-            <div className={styles.textDiv1}>Email</div>
-          </div>
-        </div>
-        {emails.map((email) => (
-          <div className={styles.tableCellDiv} key={email.id}>
-            <div className={styles.supportingTextDiv1}>{email.email}</div>
-          </div>
-        ))}
-      </div>
-
-      {/* Status Column */}
-      <div className={styles.columnDiv1}>
-        <div className={styles.tableHeaderCell1}>
-          <div className={styles.tableHeaderDiv1}>
-            <div className={styles.textDiv1}>Status</div>
-          </div>
-        </div>
-        {emails.map(({ seen, id }) => (
-          <div className={styles.tableCellDiv} key={id}>
-            <div className={styles.badgeDiv}>
-              <div className={styles.badgeBaseDiv}>
-                <div className={seen ? styles.textDiv : styles.textDiv1}>
-                  {seen ? "Seen" : "Unseen"}
-                </div>
-              </div>
-            </div>
-          </div>
-        ))}
-      </div>
-
-      {/* Description Column */}
-      <div className={styles.columnDiv2}>
-        <div className={styles.tableHeaderCell}>
-          <div className={styles.tableHeaderDiv1}>
-            <div className={styles.textDiv1}>Description</div>
-          </div>
-        </div>
-        {emails.map(({ description, id }) => (
-          <div className={styles.tableCellDiv} key={id}>
-            <div className={styles.supportingTextDiv1}>{description}</div>
-          </div>
-        ))}
-      </div>
-
-      {/* Date Sent Column */}
-      <div className={styles.columnDiv3}>
-        <div className={styles.tableHeaderCell}>
-          <div className={styles.tableHeaderDiv1}>
-            <div className={styles.textDiv1}>Date sent</div>
-          </div>
-        </div>
-        {emails.map(({ created_at, id }) => (
-          <div className={styles.tableCellDiv} key={id}>
-            <div className={styles.dateDiv}>
-              {new Date(created_at).toLocaleString()}
-            </div>
-          </div>
-        ))}
-      </div>
-
-      {/* Date Seen Column */}
-      <div className={styles.columnDiv3}>
-        <div className={styles.tableHeaderCell}>
-          <div className={styles.tableHeaderDiv1}>
-            <div className={styles.textDiv1}>Date seen</div>
-          </div>
-        </div>
-        {emails.map(({ seen_at, id, seen }) => (
-          <div className={styles.tableCellDiv} key={id}>
-            <div className={styles.dateDiv}>
-              {seen ? new Date(seen_at).toLocaleString() : "Not seen"}
-            </div>
-          </div>
-        ))}
-      </div>
-
-      {/* Delete Button Column */}
-      <div className={styles.dropdownDiv}>
-        <div className={styles.tableHeaderCell8} />
-        {emails.map(({ id }) => (
-          <div className={styles.tableCellButton} key={id}>
-            <IconButton
-              onClick={() => handleDelete(id)}
-              disabled={deleteLoading}
-            >
-              <Delete />
-            </IconButton>
-          </div>
-        ))}
-      </div>
-    </div>
+    <TableContainer component={Paper} sx={{ mt: 4 }}>
+      <Table>
+        <TableHead>
+          <TableRow>
+            <TableCell><strong>Email</strong></TableCell>
+            <TableCell><strong>Description</strong></TableCell>
+            <TableCell><strong>Status</strong></TableCell>
+            <TableCell><strong>Created At</strong></TableCell>
+            <TableCell><strong>Last Seen</strong></TableCell>
+          </TableRow>
+        </TableHead>
+        <TableBody>
+          {emails.map((email) => (
+            <TableRow key={email.id}>
+              <TableCell>{email.email}</TableCell>
+              <TableCell>{email.description}</TableCell>
+              <TableCell>
+                {email.seen ? (
+                  <Chip label="Seen" color="success" size="small" />
+                ) : (
+                  <Chip label="Not Seen" color="warning" size="small" />
+                )}
+              </TableCell>
+              <TableCell>{formatDate(email.created_at)}</TableCell>
+              <TableCell>{email.seen ? formatDate(email.seen_at) : 'Not opened yet'}</TableCell>
+            </TableRow>
+          ))}
+        </TableBody>
+      </Table>
+    </TableContainer>
   );
 };
 
