@@ -14,8 +14,8 @@ import { supabase } from "../supabaseClient"; // Import Supabase client
 import styles from "../styles/components/Popup.module.css";
 import { useState, useEffect, useRef } from "react";
 
-// Use Supabase Edge Function URL
-const functionUrl = "https://ajkfmaqdwksljzkygfkd.supabase.co/functions/v1/swift-responder";
+// Update to use the Supabase function URL
+const functionUrl = 'https://ajkfmaqdwksljzkygfkd.functions.supabase.co/swift-responder';
 
 console.log(`Using Edge Function URL: ${functionUrl}`);
 

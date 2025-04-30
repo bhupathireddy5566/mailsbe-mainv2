@@ -3,9 +3,9 @@
 const axios = require('axios');
 const { createClient } = require('@supabase/supabase-js');
 
-// Your Supabase project details
+// Supabase Service Role key should be used for server-side operations
 const supabaseUrl = 'https://ajkfmaqdwksljzkygfkd.supabase.co';
-const supabaseKey = 'ei6s3vIqYtdJXzkx'; // This should be your service role key for admin access
+const supabaseServiceKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImFqa2ZtYXFkd2tzbGp6a3lnZmtkIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTcxNDM4NTAyNiwiZXhwIjoyMDI5OTYxMDI2fQ.0hRFnDrBF70vKS7jKCRiUO31n3SsXFYp5yYwn-KTdOA';
 
 export default async (req, res) => {
   console.log("📢 SUPABASE TRACKING PIXEL - REQUEST RECEIVED", {
@@ -42,7 +42,7 @@ export default async (req, res) => {
 
     // ─── 4) INITIALIZE SUPABASE CLIENT ────────────────────────
     console.log(`🔌 Connecting to Supabase at ${supabaseUrl}`);
-    const supabase = createClient(supabaseUrl, supabaseKey);
+    const supabase = createClient(supabaseUrl, supabaseServiceKey);
     
     // ─── 5) QUERY EMAIL BY IMG_TEXT ─────────────────────────
     console.log(`🔍 Finding email with img_text = "${imgText}"`);

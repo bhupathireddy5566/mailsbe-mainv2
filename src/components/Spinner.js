@@ -1,13 +1,20 @@
-import styles from '../styles/components/Spinner.module.css';
+import React from 'react';
+import { CircularProgress, Box } from '@mui/material';
 
-import classNames from 'classnames';
-
-const Spinner = ({ size = '' }) => (
-  <span
-    className={classNames(
-      size === 'sm' ? styles['spinner-sm'] : styles.spinner
-    )}
-  />
-);
+const Spinner = () => {
+  return (
+    <Box
+      sx={{
+        display: 'flex',
+        justifyContent: 'center',
+        alignItems: 'center',
+        height: '100px',
+        width: '100%'
+      }}
+    >
+      <CircularProgress color="primary" />
+    </Box>
+  );
+};
 
 export default Spinner;

@@ -1,28 +1,94 @@
-# Mailsbe
+# MAILSBE
 
-**Suppose**, you have applied for a job through an email. You have sent the email two days ago but you haven't gotten any response. And you don't know if the employer read your email or not. Well no need to worry now because I have a solution for that, **introducing Mailsbe**.
+Email tracking application built with React and Supabase.
 
-## Introduction
+## Overview
 
-**Mailsbe** is an MIT Licensed open source project and a platform with the help of which you can find out if the Email sent by you has **been read or not**. It is a simple platform that has been designed by keeping the **user's privacy **in mind. We don't ask for full email read/write access. Instead, we provide a simple way to find the status if your email **respecting your privacy**.
+MAILSBE allows you to track when your emails are opened. Simply create a tracked email, copy the special tracking text into your email, and you'll be notified when the recipient opens it.
 
-## Tech stack
+## Features
 
-It doesn't involve a very much complicated tech stack. Instead, it uses only a few technologies like React and Nhost.
+- Email tracking with read receipts
+- Google authentication
+- Email magic link authentication
+- Real-time tracking notifications
+- Clean, modern UI
 
-- **React** -> For frontend part
-- **Nhost** -> For user authentication, database, hosting and serverless function
+## Technology Stack
 
-> If you don't know about Nhost then simply put it as a firebase alternative. Even officially, Nhost is called an open-source Firebase alternative with GraphQL.
+- React (Create React App)
+- Supabase (Authentication, Database, Edge Functions)
+- Material UI
+- React Router
 
-## Process
+## Setup Instructions
 
-I am not going to explain all of the technical jargon here, instead, I will take you through the working process of the project.
+### Prerequisites
 
-First of all, you need to create an account. Then only you can access your dashboard. Inside of your dashboard, you will see the list of emails you have sent and complete detail about them. If you haven't sent any emails then you can send one by clicking on compose button on the top left side of the page.
+- Node.js and npm installed
+- Supabase account
 
-No, you can't send emails from here. Instead, you will be provided an image (1x1 transparent pixel) which you can copy and paste to the email client from where you are sending the email. Then fill out some more information about the email (it will make it easy to find the email in the future) and click save.
+### Local Development
 
-After you sent your email, you can now access the status of the email on the dashboard. The status is either _seen_ or _unseen_. The status will be updated when the receiver opens up the email you sent. And the serverless function helps to do that by accepting the receiver's request and updating it on the database.
+1. Clone this repository
+2. Install dependencies:
+   ```
+   npm install
+   ```
+3. Create a `.env` file in the project root with your Supabase credentials:
+   ```
+   REACT_APP_SUPABASE_URL=https://your-supabase-url.supabase.co
+   REACT_APP_SUPABASE_ANON_KEY=your-anon-key
+   ```
+4. Start the development server:
+   ```
+   npm start
+   ```
 
-> This detailed guide will help you: https://blog.aashish-panthi.com.np/make-an-email-tracker-using-nhost-serverless-functions
+### Supabase Setup
+
+1. Create a new Supabase project
+2. Set up Google OAuth:
+   - Go to Supabase Dashboard → Authentication → Providers
+   - Enable Google provider and configure with your Google Cloud credentials
+3. Create the emails table:
+   ```sql
+   CREATE TABLE emails (
+     id SERIAL PRIMARY KEY,
+     email TEXT NOT NULL,
+     description TEXT,
+     img_text TEXT UNIQUE NOT NULL,
+     user_id UUID REFERENCES auth.users(id),
+     seen BOOLEAN DEFAULT FALSE,
+     seen_at TIMESTAMPTZ,
+     created_at TIMESTAMPTZ DEFAULT NOW()
+   );
+
+   -- Enable Row Level Security
+   ALTER TABLE emails ENABLE ROW LEVEL SECURITY;
+
+   -- Create policies for user access
+   CREATE POLICY "Allow users to view their own emails"
+     ON emails FOR SELECT USING (auth.uid() = user_id);
+
+   CREATE POLICY "Allow users to insert their own emails"
+     ON emails FOR INSERT WITH CHECK (auth.uid() = user_id);
+
+   CREATE POLICY "Allow service role to access all emails"
+     ON emails FOR ALL TO service_role USING (true);
+   ```
+4. Deploy the tracking function:
+   - Create a new Edge Function in Supabase
+   - Deploy the code in `functions/update.js`
+
+## Deployment
+
+This project can be deployed to any static hosting service (Vercel, Netlify, GitHub Pages):
+
+```
+npm run build
+```
+
+## License
+
+MIT
