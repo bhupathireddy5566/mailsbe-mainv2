@@ -1,114 +1,116 @@
 import React, { useState, useEffect } from 'react';
-import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
-import { ThemeProvider, createTheme, CssBaseline } from '@mui/material';
-import { Toaster } from 'react-hot-toast';
+import { ThemeProvider } from '@mui/material/styles';
+import CssBaseline from '@mui/material/CssBaseline';
+import { ToastContainer } from 'react-toastify';
+import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
+import { Box, CircularProgress } from '@mui/material';
+import theme from './theme';
 import { supabase } from './supabaseClient';
-
-// Components
 import Auth from './components/Auth';
-import EmailsTable from './components/EmailsTable';
-import Sidebar from './components/Sidebar';
-import PopUp from './components/PopUp';
-import Spinner from './components/Spinner';
-
-// Create theme
-const theme = createTheme({
-  palette: {
-    primary: {
-      main: '#00875A', // Mailsbe green
-    },
-    secondary: {
-      main: '#3366FF',
-    },
-    background: {
-      default: '#F8F9FA',
-    },
-  },
-  typography: {
-    fontFamily: '"Inter", "Roboto", "Helvetica", "Arial", sans-serif',
-  },
-});
+import Dashboard from './components/Dashboard';
+import NavBar from './components/NavBar';
+import { Toaster } from 'react-hot-toast';
+import 'react-toastify/dist/ReactToastify.css';
 
 function App() {
   const [session, setSession] = useState(null);
   const [loading, setLoading] = useState(true);
-  const [showPopup, setShowPopup] = useState(false);
+
+  // Function to refresh the session
+  const refreshSession = async () => {
+    console.log('Refreshing session...');
+    try {
+      const { data, error } = await supabase.auth.getSession();
+      
+      if (error) {
+        console.error('Error getting session:', error);
+        setSession(null);
+      } else {
+        console.log('Session data:', data);
+        setSession(data.session);
+      }
+    } catch (error) {
+      console.error('Exception getting session:', error);
+      setSession(null);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   useEffect(() => {
-    // Handle URL hash for access token authentication
-    const handleHashParams = async () => {
-      // Check if URL has an access token in the hash
-      if (window.location.hash.includes('access_token=')) {
-        // The redirected user has a hash with access_token, we need to explicitly refresh to get session
-        try {
-          const { data, error } = await supabase.auth.getSession();
-          if (!error && data.session) {
-            setSession(data.session);
-          }
-          // Remove hash to clean up URL
-          window.location.hash = '';
-        } catch (error) {
-          console.error('Error handling hash params:', error);
+    // Check if we're in an OAuth callback
+    const isCallback = window.location.href.includes('#access_token=') || 
+                      window.location.search.includes('?code=');
+    
+    if (isCallback) {
+      console.log('Detected OAuth callback URL');
+    }
+
+    // Initial session check
+    refreshSession();
+
+    // Set up auth state change listener
+    const { data: authListener } = supabase.auth.onAuthStateChange(
+      async (event, currentSession) => {
+        console.log('Auth state change:', event);
+        
+        if (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED') {
+          console.log('User signed in or token refreshed');
+          setSession(currentSession);
+        } else if (event === 'SIGNED_OUT') {
+          console.log('User signed out');
+          setSession(null);
         }
-      }
-    };
-
-    handleHashParams();
-
-    // Get initial session
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      console.log('Initial session check:', session ? 'Logged in' : 'Not logged in');
-      setSession(session);
-      setLoading(false);
-    });
-
-    // Listen for auth changes
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      (event, session) => {
-        console.log('Auth state changed:', event, session ? 'Has session' : 'No session');
-        setSession(session);
+        
         setLoading(false);
       }
     );
 
-    // Cleanup subscription
-    return () => subscription.unsubscribe();
+    // Clean up subscription
+    return () => {
+      if (authListener && authListener.subscription) {
+        authListener.subscription.unsubscribe();
+      }
+    };
   }, []);
 
   if (loading) {
-    return <Spinner />;
+    return (
+      <Box 
+        sx={{ 
+          display: 'flex', 
+          justifyContent: 'center', 
+          alignItems: 'center', 
+          height: '100vh',
+          backgroundColor: '#f9fafb'
+        }}
+      >
+        <CircularProgress color="primary" />
+      </Box>
+    );
   }
 
   return (
     <ThemeProvider theme={theme}>
       <CssBaseline />
       <Toaster position="top-center" />
-      
-      <BrowserRouter>
-        {!session ? (
-          <Auth />
+      <ToastContainer position="top-right" autoClose={3000} />
+      <Router>
+        {session ? (
+          <>
+            <NavBar session={session} />
+            <Routes>
+              <Route path="/" element={<Dashboard session={session} />} />
+              <Route path="*" element={<Navigate to="/" replace />} />
+            </Routes>
+          </>
         ) : (
-          <div style={{ display: 'flex' }}>
-            <Sidebar 
-              userName={session.user.user_metadata?.name || session.user.email}
-              userEmail={session.user.email}
-              setShowPopup={setShowPopup}
-            />
-            
-            <div style={{ flexGrow: 1, padding: '20px' }}>
-              <Routes>
-                <Route 
-                  path="/" 
-                  element={<EmailsTable />} 
-                />
-                <Route path="*" element={<Navigate to="/" replace />} />
-              </Routes>
-            </div>
-            
-            {showPopup && <PopUp setPopUp={setShowPopup} />}
-          </div>
+          <Routes>
+            <Route path="/" element={<Auth />} />
+            <Route path="*" element={<Navigate to="/" replace />} />
+          </Routes>
         )}
-      </BrowserRouter>
+      </Router>
     </ThemeProvider>
   );
 }

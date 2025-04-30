@@ -9,32 +9,42 @@ const Auth = () => {
   const [email, setEmail] = useState('');
   const [loading, setLoading] = useState(false);
   const [redirectUrl, setRedirectUrl] = useState('');
+  const [loginError, setLoginError] = useState('');
 
   // Set up the redirect URL
   useEffect(() => {
-    // Get the current URL without hash or query params
-    const url = window.location.origin + window.location.pathname;
+    // Get the full URL including origin for complete redirect
+    const url = window.location.origin;
     setRedirectUrl(url);
+    console.log('Redirect URL set to:', url);
   }, []);
 
   // Handle Google sign in
   const signInWithGoogle = async () => {
     try {
       setLoading(true);
+      setLoginError('');
+      
+      console.log('Starting Google sign in, redirectTo:', redirectUrl);
       const { error } = await supabase.auth.signInWithOAuth({
         provider: 'google',
         options: {
-          redirectTo: redirectUrl
+          redirectTo: redirectUrl,
+          queryParams: {
+            prompt: 'select_account' // Force account selection dialog
+          }
         }
       });
       
       if (error) {
-        toast.error(error.message);
-        console.error('Error signing in with Google:', error.message);
+        setLoginError(error.message);
+        toast.error('Google sign in failed: ' + error.message);
+        console.error('Error signing in with Google:', error);
       }
     } catch (err) {
+      setLoginError('Network error connecting to authentication service');
       toast.error('Failed to connect to authentication service');
-      console.error(err);
+      console.error('Exception during Google sign in:', err);
     } finally {
       setLoading(false);
     }
@@ -51,6 +61,9 @@ const Auth = () => {
     
     try {
       setLoading(true);
+      setLoginError('');
+      
+      console.log('Starting email sign in, redirectTo:', redirectUrl);
       const { error } = await supabase.auth.signInWithOtp({
         email: email,
         options: {
@@ -59,15 +72,17 @@ const Auth = () => {
       });
       
       if (error) {
+        setLoginError(error.message);
         toast.error(error.message);
-        console.error('Error signing in with email:', error.message);
+        console.error('Error signing in with email:', error);
       } else {
         toast.success('Check your email for the login link!');
         setEmail('');
       }
     } catch (err) {
+      setLoginError('Network error sending magic link');
       toast.error('Failed to send magic link');
-      console.error(err);
+      console.error('Exception during email sign in:', err);
     } finally {
       setLoading(false);
     }
@@ -113,6 +128,12 @@ const Auth = () => {
         <Typography variant="body1" align="center" sx={{ mb: 4, color: '#4B5563' }}>
           Sign in to track your emails and see when they're opened
         </Typography>
+        
+        {loginError && (
+          <Typography color="error" sx={{ mb: 2, fontSize: '0.875rem' }}>
+            {loginError}
+          </Typography>
+        )}
         
         <Button
           variant="contained"
