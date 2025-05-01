@@ -36,68 +36,79 @@ function App() {
   const [loading, setLoading] = useState(true);
   const [showPopup, setShowPopup] = useState(false);
 
-  // Function to refresh the session
-  const refreshSession = async () => {
-    console.log('Refreshing session...');
-    try {
-      const { data, error } = await supabase.auth.getSession();
-      
-      if (error) {
-        console.error('Error getting session:', error);
-        setSession(null);
-      } else {
-        console.log('Session data:', data);
-        setSession(data.session);
-      }
-    } catch (error) {
-      console.error('Exception getting session:', error);
-      setSession(null);
-    } finally {
-      setLoading(false);
-    }
-  };
-
   useEffect(() => {
-    // Check if we're in an OAuth callback
-    const isCallback = window.location.href.includes('#access_token=') || 
-                      window.location.search.includes('?code=');
-    
-    if (isCallback) {
-      console.log('Detected OAuth callback URL - refreshing session');
-      // If we detect auth parameters in URL, explicitly refresh the session
-      refreshSession();
+    const handleAuthChange = async () => {
+      console.log('Checking authentication state...');
+      setLoading(true);
       
-      // Clean URL - remove hash and query params
-      if (window.history && window.history.replaceState) {
-        window.history.replaceState({}, document.title, window.location.pathname);
-      }
-    } else {
-      // Normal session check
-      refreshSession();
-    }
-
-    // Set up auth state change listener
-    const { data: authListener } = supabase.auth.onAuthStateChange(
-      async (event, currentSession) => {
-        console.log('Auth state change:', event, currentSession ? 'Session exists' : 'No session');
+      // Check if we're on an OAuth callback URL
+      const hasAuthParams = window.location.hash || window.location.search.includes('access_token') || window.location.search.includes('code');
+      
+      try {
+        // First try to get current session
+        const { data, error } = await supabase.auth.getSession();
         
-        if (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED') {
-          console.log('User signed in or token refreshed');
-          setSession(currentSession);
-        } else if (event === 'SIGNED_OUT') {
-          console.log('User signed out');
+        if (error) {
+          console.error('Error getting session:', error.message);
           setSession(null);
+          setLoading(false);
+          return;
         }
-      }
-    );
-
-    // Clean up subscription
-    return () => {
-      if (authListener && authListener.subscription) {
-        authListener.subscription.unsubscribe();
+        
+        console.log('Current session:', data?.session ? 'Found session' : 'No session');
+        
+        if (data?.session) {
+          setSession(data.session);
+          
+          // If we have a session and we're on a callback URL, clean the URL
+          if (hasAuthParams && window.history && window.history.replaceState) {
+            console.log('Cleaning URL parameters after successful authentication');
+            window.history.replaceState({}, document.title, window.location.pathname);
+          }
+        } else if (hasAuthParams) {
+          // If we don't have a session but we're on a callback URL, try a session refresh
+          console.log('On callback URL but no session - trying session refresh');
+          const { data: refreshData } = await supabase.auth.refreshSession();
+          if (refreshData?.session) {
+            console.log('Session refreshed successfully');
+            setSession(refreshData.session);
+            
+            // Clean the URL
+            if (window.history && window.history.replaceState) {
+              window.history.replaceState({}, document.title, window.location.pathname);
+            }
+          } else {
+            console.log('Failed to refresh session on callback');
+          }
+        }
+      } catch (error) {
+        console.error('Error in auth change handler:', error);
+      } finally {
+        setLoading(false);
       }
     };
+
+    handleAuthChange();
+
+    // Set up auth listener for future changes
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+      console.log('Auth state changed:', event);
+      setSession(session);
+    });
+
+    return () => {
+      subscription?.unsubscribe();
+    };
   }, []);
+
+  // Debug output
+  useEffect(() => {
+    if (session) {
+      console.log('Session active for user:', session.user.email);
+    } else if (!loading) {
+      console.log('No active session');
+    }
+  }, [session, loading]);
 
   if (loading) {
     return <Spinner />;

@@ -8,16 +8,7 @@ import toast from 'react-hot-toast';
 const Auth = () => {
   const [email, setEmail] = useState('');
   const [loading, setLoading] = useState(false);
-  const [redirectUrl, setRedirectUrl] = useState('');
   const [loginError, setLoginError] = useState('');
-
-  // Set up the redirect URL
-  useEffect(() => {
-    // Get the full URL including origin for complete redirect
-    const url = window.location.origin;
-    setRedirectUrl(url);
-    console.log('Redirect URL set to:', url);
-  }, []);
 
   // Handle Google sign in
   const signInWithGoogle = async () => {
@@ -25,11 +16,12 @@ const Auth = () => {
       setLoading(true);
       setLoginError('');
       
-      console.log('Starting Google sign in, redirectTo:', redirectUrl);
+      console.log('Starting Google sign in with redirect to: ', window.location.origin);
+      
       const { error } = await supabase.auth.signInWithOAuth({
         provider: 'google',
         options: {
-          redirectTo: redirectUrl,
+          redirectTo: window.location.origin,
           queryParams: {
             prompt: 'select_account' // Force account selection dialog
           }
@@ -63,11 +55,12 @@ const Auth = () => {
       setLoading(true);
       setLoginError('');
       
-      console.log('Starting email sign in, redirectTo:', redirectUrl);
+      console.log('Starting email sign in with redirect to: ', window.location.origin);
+      
       const { error } = await supabase.auth.signInWithOtp({
         email: email,
         options: {
-          emailRedirectTo: redirectUrl
+          emailRedirectTo: window.location.origin
         }
       });
       
