@@ -9,18 +9,11 @@ console.log('Initializing Supabase client at URL:', supabaseUrl);
 // Create Supabase client with enhanced configuration
 export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
   auth: {
-    persistSession: true, // Enable session persistence  
-    storageKey: 'mailsbe-auth-session', // Custom storage key
-    detectSessionInUrl: true, // Detect access token in URL
-    autoRefreshToken: true, // Enable automatic token refresh
-    debug: true, // Enable debug logging for auth
-    flowType: 'implicit' // Use implicit flow (works better with Vercel)
-  },
-  global: {
-    headers: {
-      'x-application-name': 'mailsbe',
-      'x-application-version': '1.0.0'
-    }
+    persistSession: true,
+    storageKey: 'mailsbe-auth', // Simplified key name
+    detectSessionInUrl: true,
+    autoRefreshToken: true,
+    flowType: 'pkce', // Change to PKCE (more secure and reliable)
   },
   realtime: {
     params: {
@@ -29,29 +22,55 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
   }
 });
 
-// Log session details for debugging
-const logSessionDetails = async () => {
-  try {
-    const { data, error } = await supabase.auth.getSession();
-    if (error) {
-      console.error('Error fetching session:', error.message);
-    } else if (data?.session) {
-      console.log('Session found for user:', data.session.user.email);
-    } else {
-      console.log('No active session found');
+// Process URL hash containing access token if present
+export const processUrlHash = () => {
+  if (window.location.hash && window.location.hash.includes('access_token')) {
+    const hashParams = new URLSearchParams(window.location.hash.substring(1));
+    const accessToken = hashParams.get('access_token');
+    const refreshToken = hashParams.get('refresh_token');
+    const expiresIn = hashParams.get('expires_in');
+    
+    if (accessToken) {
+      console.log('Found access token in URL, setting session manually');
+      return { accessToken, refreshToken, expiresIn };
     }
-  } catch (err) {
-    console.error('Error checking session:', err);
   }
+  return null;
 };
 
-// Check initial session
-logSessionDetails();
+// Set session from hash if available
+export const setSessionFromHash = async () => {
+  const tokens = processUrlHash();
+  if (tokens) {
+    try {
+      const { data, error } = await supabase.auth.setSession({
+        access_token: tokens.accessToken,
+        refresh_token: tokens.refreshToken || ''
+      });
+      
+      if (error) {
+        console.error('Error setting session from URL hash:', error.message);
+        return false;
+      }
+      
+      if (data?.session) {
+        console.log('Successfully set session from URL hash');
+        return true;
+      }
+    } catch (err) {
+      console.error('Exception setting session from hash:', err);
+    }
+  }
+  return false;
+};
+
+// For debugging only
+export const clearAuthStorage = () => {
+  localStorage.removeItem('mailsbe-auth');
+  console.log('Auth storage cleared');
+};
 
 // Debug listener for auth state changes
 supabase.auth.onAuthStateChange((event, session) => {
-  console.log(`🔑 Auth event: ${event}`);
-  if (session) {
-    console.log(`User: ${session.user.email}`);
-  }
+  console.log(`Auth event: ${event}`, session ? `(User: ${session.user.email})` : '(No session)');
 }); 

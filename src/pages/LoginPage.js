@@ -8,16 +8,19 @@ import {
   Divider, 
   Alert,
   Collapse,
-  IconButton
+  IconButton,
+  Link
 } from '@mui/material';
 import GoogleIcon from '@mui/icons-material/Google';
 import EmailIcon from '@mui/icons-material/Email';
 import KeyIcon from '@mui/icons-material/Key';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import CloseIcon from '@mui/icons-material/Close';
+import AccountCircleIcon from '@mui/icons-material/AccountCircle';
 import { Navigate, useLocation } from 'react-router-dom';
 import toast from 'react-hot-toast';
 import { useAuth } from '../contexts/AuthContext';
+import { clearAuthStorage } from '../supabaseClient';
 
 const LoginPage = () => {
   const location = useLocation();
@@ -39,6 +42,18 @@ const LoginPage = () => {
       setLoginError(authError);
     }
   }, [authError]);
+
+  // Debug helper for auth issues that appear in session
+  const clearLocalStorage = () => {
+    try {
+      clearAuthStorage();
+      toast.success('Auth storage cleared. Try logging in again.');
+      setTimeout(() => window.location.reload(), 1000);
+    } catch (err) {
+      console.error('Error clearing auth storage:', err);
+      toast.error('Failed to clear auth storage');
+    }
+  };
 
   // Redirect if already logged in
   if (session) {
@@ -104,6 +119,24 @@ const LoginPage = () => {
     } catch (err) {
       setLoginError(err.message || 'Invalid email or password');
       toast.error('Login failed: ' + (err.message || 'Invalid credentials'));
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Handle test login
+  const handleTestLogin = async () => {
+    const testEmail = 'test@example.com';
+    const testPassword = 'testpassword123';
+    
+    try {
+      setLoading(true);
+      setLoginError('');
+      toast.success('Attempting test login...');
+      await signInWithCredentials(testEmail, testPassword);
+    } catch (err) {
+      setLoginError('Test login failed. Try using Google login or another method.');
+      toast.error('Test login failed');
     } finally {
       setLoading(false);
     }
@@ -244,7 +277,7 @@ const LoginPage = () => {
           <Collapse in={directLoginOpen}>
             <Paper elevation={0} sx={{ p: 2, bgcolor: '#f5f5f5', borderRadius: 1, mb: 2 }}>
               <Typography variant="subtitle2" gutterBottom>
-                Direct Login
+                Alternative Login Options
               </Typography>
               
               <form onSubmit={handleDirectLogin} style={{ width: '100%' }}>
@@ -280,10 +313,39 @@ const LoginPage = () => {
                   fullWidth
                   disabled={loading}
                   size="small"
-                  sx={{ textTransform: 'none' }}
+                  sx={{ textTransform: 'none', mb: 2 }}
                 >
                   Sign in with Password
                 </Button>
+
+                <Button
+                  variant="outlined"
+                  color="warning"
+                  startIcon={<AccountCircleIcon />}
+                  onClick={handleTestLogin}
+                  fullWidth
+                  disabled={loading}
+                  size="small"
+                  sx={{ textTransform: 'none', mb: 2 }}
+                >
+                  Test Account Login
+                </Button>
+
+                <Divider sx={{ my: 1 }} />
+                
+                <Box sx={{ mt: 1, textAlign: 'center' }}>
+                  <Typography variant="caption" display="block" gutterBottom>
+                    Having authentication issues?
+                  </Typography>
+                  <Link 
+                    component="button" 
+                    variant="caption" 
+                    onClick={clearLocalStorage}
+                    sx={{ cursor: 'pointer' }}
+                  >
+                    Clear browser auth data
+                  </Link>
+                </Box>
               </form>
             </Paper>
           </Collapse>

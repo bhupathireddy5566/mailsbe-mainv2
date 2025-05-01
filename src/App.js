@@ -7,6 +7,7 @@ import { AuthProvider } from './contexts/AuthContext';
 import ProtectedRoute from './components/ProtectedRoute';
 import LoginPage from './pages/LoginPage';
 import Dashboard from './pages/Dashboard';
+import { processUrlHash } from './supabaseClient';
 
 // Create theme
 const theme = createTheme({
@@ -26,29 +27,18 @@ const theme = createTheme({
   }
 });
 
-// Look for auth hash in URL before rendering
-if (window.location.hash && window.location.hash.includes('access_token')) {
-  console.log('Access token detected in URL at App initialization');
-  
-  // If we're not on the dashboard route, force redirect to preserve the hash for auth
-  if (!window.location.pathname.includes('/dashboard')) {
-    const hashParams = new URLSearchParams(window.location.hash.substring(1));
-    const state = hashParams.get('state');
-    
-    // Construct redirect with hash preserved
-    const redirectUrl = `/dashboard${window.location.hash}`;
-    console.log('Redirecting to dashboard with auth token');
-    window.location.href = redirectUrl;
-  }
-}
-
+// CRITICAL FIX: Don't clean hash from URL at the app level
+// Let the AuthContext handle it properly in its initialization
 function App() {
-  // Disable browser console logs in production (optional)
+  // The app shouldn't redirect directly at startup since that leads to losing the token
+  // All session handling should be done in the AuthContext
+  // We'll just check if we have a hash to inform how we setup the router
+
+  // For debugging in development
   useEffect(() => {
-    if (process.env.NODE_ENV === 'production') {
-      console.log = () => {};
-      console.error = () => {};
-      console.warn = () => {};
+    if (process.env.NODE_ENV === 'development') {
+      console.log('App mounted, current URL:', window.location.href);
+      console.log('Has auth hash:', Boolean(window.location.hash && window.location.hash.includes('access_token')));
     }
   }, []);
 
@@ -86,6 +76,7 @@ function App() {
             {/* Protected routes */}
             <Route element={<ProtectedRoute />}>
               <Route path="/dashboard" element={<Dashboard />} />
+              {/* Add any other protected routes here */}
             </Route>
             
             {/* Fallback route */}
