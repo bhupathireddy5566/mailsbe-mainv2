@@ -37,78 +37,82 @@ function App() {
   const [showPopup, setShowPopup] = useState(false);
 
   useEffect(() => {
-    const handleAuthChange = async () => {
-      console.log('Checking authentication state...');
-      setLoading(true);
+    // Direct handling of hash URLs after OAuth redirect
+    if (window.location.hash && window.location.hash.includes('access_token')) {
+      console.log('🔐 Access token found in URL');
       
-      // Check if we're on an OAuth callback URL
-      const hasAuthParams = window.location.hash || window.location.search.includes('access_token') || window.location.search.includes('code');
+      // Set a flag that we processed this login
+      window.localStorage.setItem('just_logged_in', 'true');
       
+      // Force a full page reload to ensure the hash is removed and session is set up
+      setTimeout(() => {
+        window.location.href = window.location.origin;
+      }, 100);
+      return;
+    }
+    
+    // Simpler session check logic
+    const checkSession = async () => {
       try {
-        // First try to get current session
+        console.log('Checking for existing session...');
+        const justLoggedIn = window.localStorage.getItem('just_logged_in');
+        
+        if (justLoggedIn) {
+          console.log('Just logged in, clearing flag');
+          window.localStorage.removeItem('just_logged_in');
+        }
+        
         const { data, error } = await supabase.auth.getSession();
         
         if (error) {
-          console.error('Error getting session:', error.message);
+          console.error('🔴 Error getting session:', error.message);
           setSession(null);
-          setLoading(false);
-          return;
-        }
-        
-        console.log('Current session:', data?.session ? 'Found session' : 'No session');
-        
-        if (data?.session) {
+        } else if (data?.session) {
+          console.log('✅ Found active session for', data.session.user.email);
           setSession(data.session);
-          
-          // If we have a session and we're on a callback URL, clean the URL
-          if (hasAuthParams && window.history && window.history.replaceState) {
-            console.log('Cleaning URL parameters after successful authentication');
-            window.history.replaceState({}, document.title, window.location.pathname);
-          }
-        } else if (hasAuthParams) {
-          // If we don't have a session but we're on a callback URL, try a session refresh
-          console.log('On callback URL but no session - trying session refresh');
-          const { data: refreshData } = await supabase.auth.refreshSession();
-          if (refreshData?.session) {
-            console.log('Session refreshed successfully');
-            setSession(refreshData.session);
-            
-            // Clean the URL
-            if (window.history && window.history.replaceState) {
-              window.history.replaceState({}, document.title, window.location.pathname);
-            }
-          } else {
-            console.log('Failed to refresh session on callback');
-          }
+        } else {
+          console.log('❌ No active session found');
+          setSession(null);
         }
-      } catch (error) {
-        console.error('Error in auth change handler:', error);
+      } catch (err) {
+        console.error('🔴 Exception in session check:', err);
+        setSession(null);
       } finally {
         setLoading(false);
       }
     };
-
-    handleAuthChange();
-
-    // Set up auth listener for future changes
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
-      console.log('Auth state changed:', event);
-      setSession(session);
+    
+    // Initial session check
+    checkSession();
+    
+    // Set up auth state listener
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, newSession) => {
+      console.log('🔄 Auth state changed:', event);
+      
+      if (event === 'SIGNED_IN') {
+        console.log('✅ SIGNED_IN event detected');
+        setSession(newSession);
+      } else if (event === 'SIGNED_OUT') {
+        console.log('❌ SIGNED_OUT event detected');
+        setSession(null);
+      } else if (event === 'TOKEN_REFRESHED') {
+        console.log('🔄 TOKEN_REFRESHED event detected');
+        setSession(newSession);
+      }
     });
-
+    
     return () => {
       subscription?.unsubscribe();
     };
   }, []);
 
-  // Debug output
+  // Log session state on changes for debugging
   useEffect(() => {
     if (session) {
-      console.log('Session active for user:', session.user.email);
-    } else if (!loading) {
-      console.log('No active session');
+      console.log('Current user:', session.user.email);
+      console.log('Auth provider:', session.user.app_metadata.provider);
     }
-  }, [session, loading]);
+  }, [session]);
 
   if (loading) {
     return <Spinner />;

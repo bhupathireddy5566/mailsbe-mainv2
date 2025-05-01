@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { Button, Typography, Box, Paper, TextField, Divider } from '@mui/material';
 import GoogleIcon from '@mui/icons-material/Google';
 import EmailIcon from '@mui/icons-material/Email';
@@ -16,14 +16,19 @@ const Auth = () => {
       setLoading(true);
       setLoginError('');
       
+      // Store a flag that we're attempting login
+      localStorage.setItem('auth_in_progress', 'true');
+      
       console.log('Starting Google sign in with redirect to: ', window.location.origin);
       
       const { error } = await supabase.auth.signInWithOAuth({
         provider: 'google',
         options: {
           redirectTo: window.location.origin,
+          // Ensure provider always shows account selection
           queryParams: {
-            prompt: 'select_account' // Force account selection dialog
+            prompt: 'select_account',
+            access_type: 'offline'
           }
         }
       });
