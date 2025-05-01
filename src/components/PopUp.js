@@ -16,6 +16,7 @@ import SaveIcon from "@mui/icons-material/Save";
 import CloseIcon from "@mui/icons-material/Close";
 import toast from "react-hot-toast";
 import { supabase } from "../supabaseClient"; // Import Supabase client
+import { useAuth } from '../contexts/AuthContext'
 
 // Update to use the Supabase function URL
 const functionUrl = 'https://ajkfmaqdwksljzkygfkd.functions.supabase.co/swift-responder';
@@ -34,17 +35,14 @@ const PopUp = ({ setPopUp }) => {
   // Ref for the image container
   const ref = useRef();
 
+  const { user } = useAuth()
+
   // Get user data from Supabase
   useEffect(() => {
-    const getUser = async () => {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (user && user.user_metadata) {
-        setName(user.user_metadata.name || "");
-      }
-    };
-    
-    getUser();
-  }, []);
+    if (user && user.user_metadata) {
+      setName(user.user_metadata.name || "");
+    }
+  }, [user]);
 
   // Generate tracking pixel URL on component mount
   useEffect(() => {
@@ -56,33 +54,25 @@ const PopUp = ({ setPopUp }) => {
   // Handle form submission
   const handleSubmit = async (e) => {
     e.preventDefault();
+    if (!user) return;
+    
     setLoading(true);
     setError(null);
 
     try {
-      // Get current user
-      const { data: { user } } = await supabase.auth.getUser();
-      
-      if (!user) {
-        throw new Error("User not authenticated");
-      }
-
-      // Add email to Supabase
-      const { data, error: insertError } = await supabase
+      const { error } = await supabase
         .from('emails')
         .insert({
-          email: email,
-          description: description,
+          email,
+          description,
           img_text: imgText.split("=")[1], // Extract the query parameter
-          user_id: user.id,
+          user_id: user.id
         })
-        .select();
-
-      if (insertError) throw insertError;
+        
+      if (error) throw error;
       
-      toast.success("Email added successfully");
+      toast.success('Email tracking created successfully');
       setPopUp(false);
-      window.location.reload();
     } catch (err) {
       console.error("Error adding email:", err);
       setError(err.message);
