@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { ThemeProvider, createTheme } from '@mui/material/styles';
 import CssBaseline from '@mui/material/CssBaseline';
 import { ToastContainer } from 'react-toastify';
-import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
+import { BrowserRouter as Router, Routes, Route, Navigate, useNavigate, useLocation } from 'react-router-dom';
 import { Box, CircularProgress } from '@mui/material';
 import { supabase } from './supabaseClient';
 import Auth from './components/Auth';
@@ -31,37 +31,63 @@ const theme = createTheme({
   }
 });
 
+// Handle access token in URL
+if (window.location.hash && window.location.hash.includes('access_token')) {
+  console.log('🔐 Access token detected in URL hash - redirecting to dashboard');
+  const cleanURL = window.location.origin + '/dashboard';
+  window.location.href = cleanURL;
+}
+
+// Dashboard component with session check
+const Dashboard = ({ session }) => {
+  const navigate = useNavigate();
+  const [showPopup, setShowPopup] = useState(false);
+  
+  useEffect(() => {
+    if (!session) {
+      navigate('/');
+    }
+  }, [session, navigate]);
+  
+  if (!session) return <Spinner />;
+  
+  return (
+    <div style={{ display: 'flex' }}>
+      <Sidebar 
+        userName={session.user.user_metadata?.name || session.user.email}
+        userEmail={session.user.email}
+        setShowPopup={setShowPopup}
+      />
+      <div style={{ flexGrow: 1, padding: '20px' }}>
+        <EmailsTable />
+      </div>
+      {showPopup && <PopUp setPopUp={setShowPopup} />}
+    </div>
+  );
+};
+
+// Root component to redirect based on auth state
+const Root = ({ session }) => {
+  const navigate = useNavigate();
+  const location = useLocation();
+  
+  useEffect(() => {
+    if (session && location.pathname === '/') {
+      navigate('/dashboard');
+    }
+  }, [session, navigate, location]);
+  
+  return session ? <Navigate to="/dashboard" replace /> : <Auth />;
+};
+
 function App() {
   const [session, setSession] = useState(null);
   const [loading, setLoading] = useState(true);
-  const [showPopup, setShowPopup] = useState(false);
 
   useEffect(() => {
-    // Direct handling of hash URLs after OAuth redirect
-    if (window.location.hash && window.location.hash.includes('access_token')) {
-      console.log('🔐 Access token found in URL');
-      
-      // Set a flag that we processed this login
-      window.localStorage.setItem('just_logged_in', 'true');
-      
-      // Force a full page reload to ensure the hash is removed and session is set up
-      setTimeout(() => {
-        window.location.href = window.location.origin;
-      }, 100);
-      return;
-    }
-    
-    // Simpler session check logic
     const checkSession = async () => {
       try {
         console.log('Checking for existing session...');
-        const justLoggedIn = window.localStorage.getItem('just_logged_in');
-        
-        if (justLoggedIn) {
-          console.log('Just logged in, clearing flag');
-          window.localStorage.removeItem('just_logged_in');
-        }
-        
         const { data, error } = await supabase.auth.getSession();
         
         if (error) {
@@ -82,10 +108,8 @@ function App() {
       }
     };
     
-    // Initial session check
     checkSession();
     
-    // Set up auth state listener
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event, newSession) => {
       console.log('🔄 Auth state changed:', event);
       
@@ -106,14 +130,6 @@ function App() {
     };
   }, []);
 
-  // Log session state on changes for debugging
-  useEffect(() => {
-    if (session) {
-      console.log('Current user:', session.user.email);
-      console.log('Auth provider:', session.user.app_metadata.provider);
-    }
-  }, [session]);
-
   if (loading) {
     return <Spinner />;
   }
@@ -124,27 +140,16 @@ function App() {
       <Toaster position="top-center" />
       <ToastContainer position="top-right" autoClose={3000} />
       <Router>
-        {session ? (
-          <div style={{ display: 'flex' }}>
-            <Sidebar 
-              userName={session.user.user_metadata?.name || session.user.email}
-              userEmail={session.user.email}
-              setShowPopup={setShowPopup}
-            />
-            <div style={{ flexGrow: 1, padding: '20px' }}>
-              <Routes>
-                <Route path="/" element={<EmailsTable />} />
-                <Route path="*" element={<Navigate to="/" replace />} />
-              </Routes>
-            </div>
-            {showPopup && <PopUp setPopUp={setShowPopup} />}
-          </div>
-        ) : (
-          <Routes>
-            <Route path="/" element={<Auth />} />
-            <Route path="*" element={<Navigate to="/" replace />} />
-          </Routes>
-        )}
+        <Routes>
+          <Route path="/" element={<Root session={session} />} />
+          <Route 
+            path="/dashboard" 
+            element={
+              session ? <Dashboard session={session} /> : <Navigate to="/" replace />
+            } 
+          />
+          <Route path="*" element={<Navigate to="/" replace />} />
+        </Routes>
       </Router>
     </ThemeProvider>
   );

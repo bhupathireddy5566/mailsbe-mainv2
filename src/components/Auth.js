@@ -16,15 +16,15 @@ const Auth = () => {
       setLoading(true);
       setLoginError('');
       
-      // Store a flag that we're attempting login
-      localStorage.setItem('auth_in_progress', 'true');
+      // Dashboard URL for redirect after auth
+      const redirectUrl = `${window.location.origin}/dashboard`;
       
-      console.log('Starting Google sign in with redirect to: ', window.location.origin);
+      console.log('Starting Google sign in with redirect to:', redirectUrl);
       
       const { error } = await supabase.auth.signInWithOAuth({
         provider: 'google',
         options: {
-          redirectTo: window.location.origin,
+          redirectTo: redirectUrl,
           // Ensure provider always shows account selection
           queryParams: {
             prompt: 'select_account',
@@ -60,12 +60,15 @@ const Auth = () => {
       setLoading(true);
       setLoginError('');
       
-      console.log('Starting email sign in with redirect to: ', window.location.origin);
+      // Dashboard URL for redirect after auth
+      const redirectUrl = `${window.location.origin}/dashboard`;
+      
+      console.log('Starting email sign in with redirect to:', redirectUrl);
       
       const { error } = await supabase.auth.signInWithOtp({
         email: email,
         options: {
-          emailRedirectTo: window.location.origin
+          emailRedirectTo: redirectUrl
         }
       });
       
