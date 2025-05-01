@@ -2,93 +2,168 @@ import { createContext, useContext, useEffect, useState } from 'react';
 import { supabase } from '../supabaseClient';
 import { useNavigate } from 'react-router-dom';
 
+// Create auth context
 const AuthContext = createContext();
 
 export const AuthProvider = ({ children }) => {
   const [session, setSession] = useState(null);
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [authError, setAuthError] = useState(null);
   const navigate = useNavigate();
 
-  // Check for session on initial load
+  // Process URL access token directly - more reliable than waiting for Supabase
+  const processUrlToken = () => {
+    if (window.location.hash && window.location.hash.includes('access_token')) {
+      console.log('Found access_token in URL hash - processing directly');
+      
+      // Extract the token for debugging
+      const hashParams = new URLSearchParams(window.location.hash.substring(1));
+      const accessToken = hashParams.get('access_token');
+      console.log('Access token found:', accessToken ? 'YES (token exists)' : 'NO');
+      
+      // Clean URL immediately - important!
+      if (window.history && window.history.replaceState) {
+        window.history.replaceState({}, document.title, '/dashboard');
+      }
+      
+      return true;
+    }
+    return false;
+  };
+
+  // Main authentication initialization
   useEffect(() => {
-    console.log('AuthProvider init');
-    
-    const checkSession = async () => {
-      console.log('Checking session...');
+    let isMounted = true;
+    console.log('AuthProvider initializing...');
+
+    const initializeAuth = async () => {
+      // Process URL token first before checking session
+      const hasProcessedToken = processUrlToken();
+      
       try {
-        setLoading(true); // Ensure loading is true when checking
+        // For URLs with tokens, do a forced session refresh
+        if (hasProcessedToken) {
+          console.log('Refreshing session after token processing...');
+          setLoading(true);
+          
+          // Try to refresh the session for token URLs
+          try {
+            const { data, error } = await supabase.auth.refreshSession();
+            
+            if (error) {
+              console.error('Session refresh error:', error.message);
+              setAuthError(error.message);
+            } else if (data?.session) {
+              console.log('✓ Session obtained after token processing');
+              if (isMounted) {
+                setSession(data.session);
+                setUser(data.session.user);
+                setAuthError(null);
+              }
+            } else {
+              console.warn('No session data after refresh');
+            }
+          } catch (refreshError) {
+            console.error('Exception during session refresh:', refreshError);
+          }
+          
+          if (isMounted) setLoading(false);
+          return;
+        }
         
+        // Normal session check for regular page loads
+        console.log('Performing regular session check...');
         const { data, error } = await supabase.auth.getSession();
         
         if (error) {
-          console.error('Error fetching session:', error.message);
-          setSession(null);
-          setUser(null);
+          console.error('Session check error:', error.message);
+          if (isMounted) setAuthError(error.message);
+        } else if (data?.session) {
+          console.log('✓ Found existing session:', data.session.user.email);
+          if (isMounted) {
+            setSession(data.session);
+            setUser(data.session.user);
+            setAuthError(null);
+          }
         } else {
-          console.log('Session data:', data?.session ? 'Found' : 'Not found');
-          setSession(data?.session || null);
-          setUser(data?.session?.user || null);
+          console.log('No active session found');
         }
       } catch (err) {
-        console.error('Session check failed:', err);
-        setSession(null);
-        setUser(null);
+        console.error('Authentication initialization error:', err);
+        if (isMounted) setAuthError(err.message);
       } finally {
-        console.log('Setting loading to false');
-        setLoading(false);
+        if (isMounted) setLoading(false);
       }
     };
 
-    // Handle access token in URL
-    if (window.location.hash && window.location.hash.includes('access_token')) {
-      console.log('Access token found in URL - waiting for session');
-      // Wait a bit for the session to be established
-      setTimeout(() => {
-        checkSession().then(() => {
-          if (window.history && window.history.replaceState) {
-            window.history.replaceState({}, document.title, '/dashboard');
-          }
-        });
-      }, 1000);
-    } else {
-      checkSession();
-    }
+    initializeAuth();
 
-    // Listen for auth state changes
+    // Listen for Supabase auth changes
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event, currentSession) => {
-      console.log('Auth event:', event, currentSession ? 'with session' : 'no session');
+      console.log(`AUTH EVENT: ${event}`, currentSession ? `(User: ${currentSession.user.email})` : '(No session)');
       
-      if (currentSession) {
-        setSession(currentSession);
-        setUser(currentSession.user);
-        setLoading(false);
-        
-        if (event === 'SIGNED_IN') {
-          console.log('User signed in, navigating to dashboard');
-          navigate('/dashboard');
+      if (event === 'SIGNED_IN') {
+        if (isMounted) {
+          setSession(currentSession);
+          setUser(currentSession.user);
+          setLoading(false);
+          // Navigate only if we're not already on the dashboard
+          if (window.location.pathname !== '/dashboard') {
+            navigate('/dashboard');
+          }
         }
-      } else {
-        setSession(null);
-        setUser(null);
-        setLoading(false);
-        
-        if (event === 'SIGNED_OUT') {
-          console.log('User signed out, navigating to home');
+      } 
+      else if (event === 'SIGNED_OUT') {
+        if (isMounted) {
+          setSession(null);
+          setUser(null);
+          setLoading(false);
           navigate('/');
+        }
+      }
+      else if (event === 'TOKEN_REFRESHED' && currentSession) {
+        if (isMounted) {
+          setSession(currentSession);
+          setUser(currentSession.user);
+          setLoading(false);
         }
       }
     });
 
+    // Cleanup function
     return () => {
+      isMounted = false;
       subscription?.unsubscribe();
     };
   }, [navigate]);
 
+  // Direct sign-in method for testing
+  const signInWithCredentials = async (email, password) => {
+    try {
+      setLoading(true);
+      const { data, error } = await supabase.auth.signInWithPassword({
+        email,
+        password
+      });
+
+      if (error) throw error;
+      return data;
+    } catch (error) {
+      console.error('Credentials sign-in error:', error.message);
+      throw error;
+    } finally {
+      setLoading(false);
+    }
+  };
+
   // Sign in with Google
   const signInWithGoogle = async () => {
     try {
-      const { error } = await supabase.auth.signInWithOAuth({
+      setLoading(true);
+      setAuthError(null);
+      
+      const { data, error } = await supabase.auth.signInWithOAuth({
         provider: 'google',
         options: {
           redirectTo: `${window.location.origin}/dashboard`,
@@ -99,63 +174,65 @@ export const AuthProvider = ({ children }) => {
         }
       });
 
-      if (error) {
-        throw error;
-      }
+      if (error) throw error;
+      return data;
     } catch (error) {
-      console.error('Error signing in with Google:', error.message);
+      console.error('Google sign-in error:', error.message);
+      setAuthError(error.message);
       throw error;
+    } finally {
+      setLoading(false);
     }
   };
 
   // Sign in with email magic link
   const signInWithEmail = async (email) => {
     try {
-      const { error } = await supabase.auth.signInWithOtp({
+      setLoading(true);
+      setAuthError(null);
+      
+      const { data, error } = await supabase.auth.signInWithOtp({
         email,
         options: {
           emailRedirectTo: `${window.location.origin}/dashboard`
         }
       });
 
-      if (error) {
-        throw error;
-      }
-      return { success: true };
+      if (error) throw error;
+      return data;
     } catch (error) {
-      console.error('Error signing in with email:', error.message);
+      console.error('Email sign-in error:', error.message);
+      setAuthError(error.message);
       throw error;
+    } finally {
+      setLoading(false);
     }
   };
 
   // Sign out
   const signOut = async () => {
     try {
+      setLoading(true);
       const { error } = await supabase.auth.signOut();
-      if (error) {
-        throw error;
-      }
-      navigate('/');
+      if (error) throw error;
     } catch (error) {
-      console.error('Error signing out:', error.message);
+      console.error('Sign-out error:', error.message);
+      setAuthError(error.message);
+    } finally {
+      setLoading(false);
+      navigate('/');
     }
   };
 
-  // Debug logging
-  useEffect(() => {
-    console.log('Auth state updated:', { 
-      isAuthenticated: !!session, 
-      isLoading: loading,
-      user: user?.email
-    });
-  }, [session, loading, user]);
-
+  // Export context value
   const value = {
     session,
     user,
     loading,
+    authError,
     signInWithGoogle,
     signInWithEmail,
+    signInWithCredentials,
     signOut
   };
 

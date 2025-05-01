@@ -1,16 +1,44 @@
 import React, { useState, useEffect } from 'react';
-import { Button, Typography, Box, Paper, TextField, Divider } from '@mui/material';
+import { 
+  Button, 
+  Typography, 
+  Box, 
+  Paper, 
+  TextField, 
+  Divider, 
+  Alert,
+  Collapse,
+  IconButton
+} from '@mui/material';
 import GoogleIcon from '@mui/icons-material/Google';
 import EmailIcon from '@mui/icons-material/Email';
-import { Navigate } from 'react-router-dom';
+import KeyIcon from '@mui/icons-material/Key';
+import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
+import CloseIcon from '@mui/icons-material/Close';
+import { Navigate, useLocation } from 'react-router-dom';
 import toast from 'react-hot-toast';
 import { useAuth } from '../contexts/AuthContext';
 
 const LoginPage = () => {
+  const location = useLocation();
   const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [directLoginOpen, setDirectLoginOpen] = useState(false);
   const [loading, setLoading] = useState(false);
   const [loginError, setLoginError] = useState('');
-  const { signInWithGoogle, signInWithEmail, session } = useAuth();
+  const { signInWithGoogle, signInWithEmail, signInWithCredentials, session, authError } = useAuth();
+
+  // Clear errors when form changes
+  useEffect(() => {
+    setLoginError('');
+  }, [email, password]);
+
+  // Show auth errors from context
+  useEffect(() => {
+    if (authError) {
+      setLoginError(authError);
+    }
+  }, [authError]);
 
   // Redirect if already logged in
   if (session) {
@@ -24,8 +52,8 @@ const LoginPage = () => {
       setLoginError('');
       await signInWithGoogle();
     } catch (err) {
-      setLoginError('Failed to sign in with Google');
-      toast.error('Failed to connect to authentication service');
+      setLoginError(err.message || 'Failed to sign in with Google');
+      toast.error('Google sign-in failed');
     } finally {
       setLoading(false);
     }
@@ -49,6 +77,33 @@ const LoginPage = () => {
     } catch (err) {
       setLoginError(err.message || 'Failed to send magic link');
       toast.error(err.message || 'Failed to send magic link');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Handle direct email/password login
+  const handleDirectLogin = async (e) => {
+    e.preventDefault();
+    
+    if (!email || !email.includes('@')) {
+      toast.error('Please enter a valid email address');
+      return;
+    }
+    
+    if (!password || password.length < 6) {
+      toast.error('Password must be at least 6 characters');
+      return;
+    }
+    
+    try {
+      setLoading(true);
+      setLoginError('');
+      await signInWithCredentials(email, password);
+      toast.success('Login successful!');
+    } catch (err) {
+      setLoginError(err.message || 'Invalid email or password');
+      toast.error('Login failed: ' + (err.message || 'Invalid credentials'));
     } finally {
       setLoading(false);
     }
@@ -91,14 +146,27 @@ const LoginPage = () => {
           MAILSBE
         </Typography>
         
-        <Typography variant="body1" align="center" sx={{ mb: 4, color: '#4B5563' }}>
+        <Typography variant="body1" align="center" sx={{ mb: 3, color: '#4B5563' }}>
           Sign in to track your emails and see when they're opened
         </Typography>
         
         {loginError && (
-          <Typography color="error" sx={{ mb: 2, fontSize: '0.875rem' }}>
+          <Alert 
+            severity="error" 
+            sx={{ mb: 3, width: '100%' }}
+            action={
+              <IconButton
+                aria-label="close"
+                color="inherit"
+                size="small"
+                onClick={() => setLoginError('')}
+              >
+                <CloseIcon fontSize="inherit" />
+              </IconButton>
+            }
+          >
             {loginError}
-          </Typography>
+          </Alert>
         )}
         
         <Button
@@ -153,9 +221,73 @@ const LoginPage = () => {
               fontSize: '1rem'
             }}
           >
-            Sign in with Email
+            Sign in with Email Link
           </Button>
         </form>
+        
+        <Box sx={{ width: '100%', mt: 3 }}>
+          <Button
+            variant="text"
+            color="primary"
+            endIcon={<ExpandMoreIcon 
+              sx={{ 
+                transform: directLoginOpen ? 'rotate(180deg)' : 'rotate(0)',
+                transition: 'transform 0.3s'
+              }} 
+            />}
+            onClick={() => setDirectLoginOpen(!directLoginOpen)}
+            sx={{ mb: 1, textTransform: 'none' }}
+          >
+            Having trouble logging in?
+          </Button>
+          
+          <Collapse in={directLoginOpen}>
+            <Paper elevation={0} sx={{ p: 2, bgcolor: '#f5f5f5', borderRadius: 1, mb: 2 }}>
+              <Typography variant="subtitle2" gutterBottom>
+                Direct Login
+              </Typography>
+              
+              <form onSubmit={handleDirectLogin} style={{ width: '100%' }}>
+                <TextField 
+                  fullWidth
+                  label="Email"
+                  variant="outlined"
+                  type="email"
+                  size="small"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  sx={{ mb: 2 }}
+                  required
+                />
+                
+                <TextField 
+                  fullWidth
+                  label="Password"
+                  variant="outlined"
+                  type="password"
+                  size="small"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  sx={{ mb: 2 }}
+                  required
+                />
+                
+                <Button
+                  variant="contained"
+                  color="secondary"
+                  startIcon={<KeyIcon />}
+                  type="submit"
+                  fullWidth
+                  disabled={loading}
+                  size="small"
+                  sx={{ textTransform: 'none' }}
+                >
+                  Sign in with Password
+                </Button>
+              </form>
+            </Paper>
+          </Collapse>
+        </Box>
         
         <Typography variant="caption" sx={{ mt: 3, color: '#6B7280', textAlign: 'center' }}>
           By signing in, you agree to our Terms of Service and Privacy Policy.
