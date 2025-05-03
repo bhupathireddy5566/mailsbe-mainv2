@@ -1,8 +1,8 @@
-// VERSION: 3.0 - ZERO DEPENDENCIES
-// Using only built-in Node.js modules - no external dependencies
+// VERSION: 3.1 - ABSOLUTELY NO DEPENDENCIES, NOT EVEN IMPORTS
+// We will only use built-in Node.js 'https' module when needed, but won't import it at the top
 
 export default async (req, res) => {
-  console.log("🚀 --- PIXEL TRACKER v3.0 (NO DEPENDENCIES) ---");
+  console.log("🚀 --- PIXEL TRACKER v3.1 (ABSOLUTELY NO IMPORTS) ---");
   console.log("⏰ Request received at:", new Date().toISOString());
   console.log("📦 Query parameters:", req.query);
 
@@ -40,24 +40,34 @@ export default async (req, res) => {
     console.log(`🔑 Admin Secret: ${ADMIN_SECRET.substring(0, 3)}...`);
 
     // ─── HELPER FOR HTTP REQUESTS ────────────────────────
-    const makeRequest = (url, method, headers, body) => {
+    const makeGraphQLRequest = async (query, variables) => {
       return new Promise((resolve, reject) => {
-        // Parse URL to get components
-        const urlObj = new URL(url);
+        // Require the https module only when needed (not at the top)
+        const https = require('https');
         
-        // Set up the request options
+        // Parse URL to get just the hostname and path
+        const url = new URL(GRAPHQL_URL);
+        
+        // Prepare request body
+        const requestBody = JSON.stringify({
+          query: query,
+          variables: variables
+        });
+        
+        // Prepare request options
         const options = {
-          hostname: urlObj.hostname,
-          path: urlObj.pathname + urlObj.search,
-          method: method,
-          headers: headers
+          hostname: url.hostname,
+          path: url.pathname,
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'x-hasura-admin-secret': ADMIN_SECRET,
+            'Content-Length': Buffer.byteLength(requestBody)
+          }
         };
         
-        // Dynamically require the appropriate module based on the protocol
-        const httpModule = urlObj.protocol === 'https:' ? require('https') : require('http');
-        
         // Make the request
-        const req = httpModule.request(options, (res) => {
+        const req = https.request(options, (res) => {
           let data = '';
           
           res.on('data', (chunk) => {
@@ -66,12 +76,11 @@ export default async (req, res) => {
           
           res.on('end', () => {
             try {
-              // Parse JSON response if possible
-              const parsedData = JSON.parse(data);
-              resolve({ status: res.statusCode, data: parsedData });
-            } catch (e) {
-              // Return raw data if not JSON
-              resolve({ status: res.statusCode, data: data });
+              // Parse JSON response
+              const result = JSON.parse(data);
+              resolve(result);
+            } catch (error) {
+              reject(new Error(`Failed to parse JSON response: ${error.message}`));
             }
           });
         });
@@ -80,116 +89,80 @@ export default async (req, res) => {
           reject(error);
         });
         
-        // Send the body if provided
-        if (body) {
-          req.write(typeof body === 'string' ? body : JSON.stringify(body));
-        }
-        
+        // Send the request body
+        req.write(requestBody);
         req.end();
       });
     };
 
-    // ─── FIND EMAIL QUERY ────────────────────────────────
-    console.log(`🔍 Searching for email with img_text = "${imgText}"`);
+    // ─── FIND EMAIL BY IMG_TEXT ────────────────────────────
+    console.log(`🔍 Looking for email with img_text: "${imgText}"`);
     
-    const getEmailQuery = {
-      query: `
-        query GetEmailByImgText($text: String!) {
-          emails(where: { img_text: { _eq: $text } }, limit: 1) {
-            id
-            seen
-            seen_at
-          }
+    const findEmailResult = await makeGraphQLRequest(
+      `
+      query GetEmail($text: String!) {
+        emails(where: { img_text: { _eq: $text } }, limit: 1) {
+          id
+          seen
+          seen_at
         }
+      }
       `,
-      variables: { text: imgText }
-    };
-    
-    const headers = {
-      'Content-Type': 'application/json',
-      'x-hasura-admin-secret': ADMIN_SECRET
-    };
-    
-    // Execute the query
-    const queryResult = await makeRequest(
-      GRAPHQL_URL,
-      'POST',
-      headers,
-      getEmailQuery
+      { text: imgText }
     );
     
-    console.log(`📥 Query response status: ${queryResult.status}`);
-    
-    // Check for errors or no data
-    if (queryResult.status !== 200 || !queryResult.data?.data?.emails) {
-      console.warn(`⚠️ No valid email data returned. Status: ${queryResult.status}`);
+    // Check if we got valid data
+    if (!findEmailResult.data || !findEmailResult.data.emails || findEmailResult.data.emails.length === 0) {
+      console.warn(`⚠️ No email found with img_text: "${imgText}"`);
       return sendPixel();
     }
     
-    // Check if email exists
-    const emails = queryResult.data.data.emails;
-    if (emails.length === 0) {
-      console.warn(`⚠️ No email found with img_text = "${imgText}"`);
-      return sendPixel();
-    }
+    // Extract email data
+    const email = findEmailResult.data.emails[0];
+    console.log(`✅ Found email with ID: ${email.id}, seen status: ${email.seen}`);
     
-    // Extract email info
-    const email = emails[0];
-    console.log(`📧 Found Email ID: ${email.id}, Seen: ${email.seen}`);
-    
-    // Skip if already seen
+    // Skip update if already seen
     if (email.seen === true) {
-      console.log(`👍 Email ID ${email.id} already marked as seen on ${email.seen_at}. Skipping update.`);
+      console.log(`ℹ️ Email already marked as seen at: ${email.seen_at}`);
       return sendPixel();
     }
     
-    // ─── UPDATE EMAIL ───────────────────────────────────
-    const seenAt = new Date().toISOString();
-    console.log(`✏️ Updating Email ID ${email.id} - Setting seen=true, seen_at=${seenAt}`);
+    // ─── UPDATE EMAIL AS SEEN ────────────────────────────
+    console.log(`📝 Updating email ID ${email.id} to seen=true`);
     
-    const updateMutation = {
-      query: `
-        mutation UpdateEmailSeenStatus($id: Int!, $seenAt: timestamptz!) {
-          update_emails_by_pk(
-            pk_columns: { id: $id },
-            _set: { seen: true, seen_at: $seenAt }
-          ) {
-            id
-          }
+    const seenAt = new Date().toISOString();
+    
+    const updateResult = await makeGraphQLRequest(
+      `
+      mutation UpdateEmail($id: Int!, $seenAt: timestamptz!) {
+        update_emails_by_pk(
+          pk_columns: { id: $id },
+          _set: { seen: true, seen_at: $seenAt }
+        ) {
+          id
         }
+      }
       `,
-      variables: {
+      { 
         id: parseInt(email.id, 10),
         seenAt: seenAt
       }
-    };
-    
-    // Execute the mutation
-    const mutationResult = await makeRequest(
-      GRAPHQL_URL,
-      'POST',
-      headers,
-      updateMutation
     );
     
-    // Check result
-    if (mutationResult.status === 200 && mutationResult.data?.data?.update_emails_by_pk) {
-      console.log(`✅ Successfully updated seen status for Email ID: ${email.id}`);
+    // Check update result
+    if (updateResult.data && updateResult.data.update_emails_by_pk) {
+      console.log(`✅ Successfully updated email ID ${email.id} as seen at ${seenAt}`);
     } else {
-      console.warn(`⚠️ Update failed or returned unexpected data. Status: ${mutationResult.status}`);
-      if (mutationResult.data?.errors) {
-        console.error(`❌ GraphQL errors:`, JSON.stringify(mutationResult.data.errors));
-      }
+      console.warn(`⚠️ Failed to update email seen status. Result:`, JSON.stringify(updateResult));
     }
     
-    // Always return the pixel response
+    // Always return the tracking pixel
     return sendPixel();
     
   } catch (error) {
-    console.error(`💥 CRITICAL ERROR: ${error.message}`);
+    console.error(`❌ Error in tracking pixel function: ${error.message}`);
     console.error(error.stack);
+    // Still return the pixel even on error
     return sendPixel();
-  } finally {
-    console.log("🏁 --- Function End ---");
   }
 };
