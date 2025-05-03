@@ -2,7 +2,5 @@
   "name": "serverless-functions",
   "version": "1.0.0",
   "main": "update.js",
-  "dependencies": {
-    // Add only necessary dependencies for the function
-  }
+  "dependencies": {}
 } 
