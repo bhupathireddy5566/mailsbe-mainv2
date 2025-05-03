@@ -1,7 +1,6 @@
 {
-  "name": "mailsbe-functions",
+  "name": "email-tracker-function",
   "version": "1.0.0",
-  "description": "Nhost functions for the Mailsbe application",
-  "main": "index.js",
+  "description": "Email tracking function",
   "dependencies": {}
 } 
