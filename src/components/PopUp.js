@@ -1,134 +1,135 @@
-import React, { useState, useEffect, useRef } from "react";
 import {
   TextField,
   Typography,
   IconButton,
   FormHelperText,
   FormControl,
-  Dialog,
-  DialogTitle,
-  DialogContent,
-  DialogActions,
-  Box,
 } from "@mui/material";
 import LoadingButton from "@mui/lab/LoadingButton";
 import SaveIcon from "@mui/icons-material/Save";
-import CloseIcon from "@mui/icons-material/Close";
+import HighlightOffIcon from "@mui/icons-material/HighlightOff";
 import toast from "react-hot-toast";
-import { supabase } from "../supabaseClient"; // Import Supabase client
-import { useAuth } from '../contexts/AuthContext'
+import { useUserData } from "@nhost/react";
 
-// Update to use the Supabase function URL
-const functionUrl = 'https://ajkfmaqdwksljzkygfkd.functions.supabase.co/swift-responder';
+import styles from "../styles/components/Popup.module.css";
+import { useState, useEffect, useRef, useMemo } from "react";
+import { gql, useMutation } from "@apollo/client";
 
-console.log(`Using Edge Function URL: ${functionUrl}`);
+// --- Configuration --- 
+// Ensure these match your Nhost project
+const NHOST_SUBDOMAIN = process.env.REACT_APP_NHOST_SUBDOMAIN || "ttgygockyojigiwmkjsl";
+const NHOST_REGION = process.env.REACT_APP_NHOST_REGION || "ap-south-1";
+
+// Construct the base URL for Nhost functions
+const FUNCTIONS_BASE_URL = `https://${NHOST_SUBDOMAIN}.functions.${NHOST_REGION}.nhost.run/v1`;
+console.log(`[PopUp] Using Functions Base URL: ${FUNCTIONS_BASE_URL}`);
+
+// GraphQL Mutation to add a new email entry
+const ADD_EMAIL = gql`
+  mutation addEmail(
+    $email: String!
+    $description: String!
+    $img_text: String!       // This should store the UNIQUE ID (timestamp)
+    $user_id: String!
+  ) {
+    insert_emails_one(object: {
+      description: $description
+      email: $email
+      img_text: $img_text      // Storing the timestamp here
+      user_id: $user_id
+    }) {
+      id                     // Request needed fields back
+    }
+  }
+`;
 
 const PopUp = ({ setPopUp }) => {
-  // State variables
+  const user = useUserData();
+
+  // State for form fields
   const [email, setEmail] = useState("");
   const [description, setDescription] = useState("");
-  const [name, setName] = useState("");
-  const [imgText, setImgText] = useState("");
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState(null);
+  const [name, setName] = useState(user?.displayName || ""); 
 
-  // Ref for the image container
+  // --- Tracking Pixel Logic --- 
+  // Generate a unique ID (timestamp) only once when the component mounts
+  const uniqueTrackingId = useMemo(() => new Date().getTime().toString(), []); 
+  
+  // Construct the full tracking pixel URL using the unique ID
+  const trackingPixelUrl = `${FUNCTIONS_BASE_URL}/update?text=${uniqueTrackingId}`;
+  console.log(`[PopUp] Generated Tracking Pixel URL: ${trackingPixelUrl}`);
+  console.log(`[PopUp] Unique Tracking ID to be saved: ${uniqueTrackingId}`);
+
+  // Mutation hook
+  const [addEmailMutation, { loading, error }] = useMutation(ADD_EMAIL);
+
+  // Ref for the image container (if needed for copy functionality)
   const ref = useRef();
-
-  const { user } = useAuth()
-
-  // Get user data from Supabase
-  useEffect(() => {
-    if (user && user.user_metadata) {
-      setName(user.user_metadata.name || "");
-    }
-  }, [user]);
-
-  // Generate tracking pixel URL on component mount
-  useEffect(() => {
-    const time = new Date().getTime();
-    setImgText(`${functionUrl}?text=${time}`);
-    console.log("Generated tracking URL:", `${functionUrl}?text=${time}`);
-  }, []);
 
   // Handle form submission
   const handleSubmit = async (e) => {
     e.preventDefault();
-    if (!user) return;
     
-    setLoading(true);
-    setError(null);
+    // Ensure user and tracking ID are available
+    if (!user || !uniqueTrackingId) {
+      toast.error("User data or tracking ID missing. Please try again.");
+      return;
+    }
+
+    console.log(`[PopUp] Submitting form. Saving img_text: ${uniqueTrackingId}`);
 
     try {
-      const { error } = await supabase
-        .from('emails')
-        .insert({
-          email,
-          description,
-          img_text: imgText.split("=")[1], // Extract the query parameter
-          user_id: user.id
-        })
-        
-      if (error) throw error;
-      
-      toast.success('Email tracking created successfully');
-      setPopUp(false);
+      const result = await addEmailMutation({
+        variables: {
+          email: email,
+          description: description,
+          img_text: uniqueTrackingId, // IMPORTANT: Save ONLY the ID, not the full URL
+          user_id: user.id,
+        },
+      });
+
+      if (result.data?.insert_emails_one?.id) {
+        toast.success(`Email added successfully (ID: ${result.data.insert_emails_one.id})`);
+        setPopUp(false);
+        // Consider updating local state instead of full reload if possible
+        window.location.reload(); 
+      } else {
+         // Handle cases where the mutation succeeded but didn't return expected data
+         console.error("[PopUp] Mutation succeeded but response format unexpected:", result);
+         toast.error("Email added, but couldn't confirm response.");
+         setPopUp(false);
+      }
+
     } catch (err) {
-      console.error("Error adding email:", err);
-      setError(err.message);
-      toast.error("Unable to add email");
-    } finally {
-      setLoading(false);
+      console.error("[PopUp] Error submitting form:", err);
+      toast.error(`Unable to add email: ${err.message}`);
     }
   };
 
-  // Tracking pixel display style
-  const pixelDisplayStyle = {
-    padding: '15px',
-    border: '1px solid #e0e0e0',
-    borderRadius: '4px',
-    backgroundColor: '#f5f5f5',
-    marginBottom: '20px',
-    position: 'relative',
-    overflow: 'hidden',
-    wordBreak: 'break-word',
-  };
-
-  const pixelHelperTextStyle = {
-    fontSize: '12px',
-    color: '#666',
-    marginTop: '8px',
-    display: 'block',
-  };
+  // No useEffect needed just for setting the URL, useMemo handles the ID generation
 
   return (
-    <Dialog 
-      open={true} 
-      onClose={() => setPopUp(false)}
-      maxWidth="sm"
-      fullWidth
-    >
-      <DialogTitle sx={{ 
-        display: 'flex', 
-        justifyContent: 'space-between',
-        alignItems: 'center',
-        borderBottom: '1px solid #e0e0e0'
-      }}>
-        <Typography variant="h6">Enter new email details</Typography>
-        <IconButton
-          aria-label="Close popup"
-          onClick={() => setPopUp(false)}
-          size="small"
-        >
-          <CloseIcon />
-        </IconButton>
-      </DialogTitle>
-      
-      <form onSubmit={handleSubmit}>
-        <DialogContent sx={{ pt: 3 }}>
-          <FormControl sx={{ width: "100%" }} error={!!error}>
+    <div className={styles.popup}>
+      <div className={styles.popUpDiv}>
+        {/* Header */}
+        <div className={styles.header}>
+          <Typography variant="h6" component="h4">
+            Enter new email details
+          </Typography>
+          <IconButton
+            aria-label="Close popup"
+            onClick={() => setPopUp(false)}
+          >
+            <HighlightOffIcon />
+          </IconButton>
+        </div>
+
+        {/* Form */}
+        <form className={styles.groupForm} onSubmit={handleSubmit}>
+          <FormControl sx={{ m: 0, width: "100%" }} error={!!error}>
             {/* Email Field */}
             <TextField
+              className={styles.inputOutlinedTextField}
               fullWidth
               color="primary"
               variant="outlined"
@@ -136,7 +137,7 @@ const PopUp = ({ setPopUp }) => {
               label="Email"
               placeholder="Receiver's email"
               size="medium"
-              margin="normal"
+              margin="none"
               required
               value={email}
               onChange={(e) => setEmail(e.target.value)}
@@ -144,16 +145,15 @@ const PopUp = ({ setPopUp }) => {
 
             {/* Description Field */}
             <TextField
+              className={styles.textAreaOutlinedTextField}
               color="primary"
               variant="outlined"
               multiline
-              rows={2}
               label="Description"
               placeholder="Some distinct description"
               helperText="This text will help to separate emails."
               required
               fullWidth
-              margin="normal"
               value={description}
               onChange={(e) => setDescription(e.target.value)}
             />
@@ -167,55 +167,57 @@ const PopUp = ({ setPopUp }) => {
               helperText="An image will be attached with this text."
               required
               fullWidth
-              margin="normal"
               value={name}
               onChange={(e) => setName(e.target.value)}
             />
 
-            {/* Tracking Pixel */}
-            <Box sx={{ mt: 2 }}>
-              <Typography variant="subtitle2" gutterBottom>Tracking Pixel</Typography>
-              <Box sx={pixelDisplayStyle} ref={ref}>
-                {name && name.substring(0, 1)}
+            {/* Tracking Pixel Display - Uses the full URL */}
+            <div className={styles.copyBox}>
+              <Typography variant="body2" sx={{ mb: 1 }}>
+                Copy the element below and paste it into your email body:
+              </Typography>
+              <div className={styles.imgDiv} ref={ref}>
+                {/* Display name around the pixel */}
+                {name && name.substring(0, 1)} 
                 <img
-                  src={imgText}
+                  src={trackingPixelUrl} // Use the generated URL here
+                  className={styles.pixelImg}
                   width={1}
                   height={1}
-                  alt="Tracking pixel"
-                  style={{ opacity: 0 }}
+                  alt=""
+                  style={{ verticalAlign: 'middle' }} // Helps with alignment
                 />
-                {name && name.substring(1, name.length)}
-              </Box>
-              <Typography variant="caption" sx={pixelHelperTextStyle}>
-                Copy this text and paste it in the email.{" "}
-                <strong>Important: Don't erase it after pasting.</strong>
-              </Typography>
-            </Box>
+                {name && ` ${name.substring(1, name.length)}`}
+              </div>
+              <span className={styles.imgHelperText}>
+                <strong>Important:</strong> Paste as HTML or ensure the image loads.
+              </span>
+            </div>
 
             {/* Error Message */}
             {error && (
               <FormHelperText error>
-                Error occurred! {error}
+                GraphQL Error: {error.message}
               </FormHelperText>
             )}
+
+            {/* Submit Button */}
+            <LoadingButton
+              className={styles.buttonContainedText}
+              variant="contained"
+              color="primary"
+              endIcon={<SaveIcon />}
+              size="large"
+              fullWidth
+              type="submit"
+              loading={loading}
+            >
+              Save Email Details
+            </LoadingButton>
           </FormControl>
-        </DialogContent>
-        
-        <DialogActions sx={{ p: 2, pt: 0 }}>
-          <LoadingButton
-            variant="contained"
-            color="primary"
-            endIcon={<SaveIcon />}
-            size="large"
-            fullWidth
-            type="submit"
-            loading={loading}
-          >
-            Save
-          </LoadingButton>
-        </DialogActions>
-      </form>
-    </Dialog>
+        </form>
+      </div>
+    </div>
   );
 };
 
