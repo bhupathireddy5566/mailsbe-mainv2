@@ -1,6 +1,8 @@
 {
-  "name": "email-tracker-function",
+  "name": "serverless-functions",
   "version": "1.0.0",
-  "description": "Email tracking function",
-  "dependencies": {}
+  "main": "update.js",
+  "dependencies": {
+    // Add only necessary dependencies for the function
+  }
 } 
